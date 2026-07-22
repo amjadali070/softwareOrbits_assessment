@@ -24,7 +24,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col">{children}</body>
+      {/* suppressHydrationWarning: browser extensions (Grammarly, password managers, etc.)
+          inject attributes like data-gr-ext-installed onto <body> before React hydrates —
+          that's a mismatch from the extension, not from this app, so it's not something to fix
+          in our code. Scoped to this element only; doesn't hide real hydration bugs elsewhere. */}
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
+        {children}
+      </body>
     </html>
   );
 }
