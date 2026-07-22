@@ -48,6 +48,7 @@ function pickRandomSeats(pool: string[]): string[] {
 }
 
 async function resetPool(pool: string[]): Promise<void> {
+  await Reservation.deleteMany({ seats: { $in: pool } });
   const result = await Seat.updateMany(
     { _id: { $in: pool } },
     { $set: { status: 'available', reservationId: null }, $inc: { version: 1 } },
@@ -158,7 +159,7 @@ async function main() {
   const poolAvailable = poolSeats.filter((s) => s.status === 'available').length;
   const poolReserved = poolSeats.filter((s) => s.status === 'reserved').length;
 
-  const poolReservations = await Reservation.find({ seats: { $in: SEAT_POOL } }).lean();
+  const poolReservations = await Reservation.find({ seats: { $in: SEAT_POOL }, status: 'confirmed' }).lean();
   const seatReferenceCount = new Map<string, number>();
   for (const reservation of poolReservations) {
     for (const seatId of reservation.seats) {
