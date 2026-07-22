@@ -29,6 +29,7 @@ export function ReservationPanel({
 }: ReservationPanelProps) {
   return (
     <div className="glass-panel-senior flex flex-col justify-between h-full gap-5 rounded-3xl p-5 sm:p-6 shadow-2xl">
+      {/* Top Form Section */}
       <div className="flex flex-col gap-5">
         <h2 className="text-base font-bold text-white border-b border-slate-800/80 pb-3">
           Reserve Seats
@@ -65,7 +66,7 @@ export function ReservationPanel({
           </div>
         </div>
 
-        {/* Submit Button - White Background */}
+        {/* Submit Button */}
         <button
           type="button"
           onClick={onSubmit}
@@ -93,8 +94,8 @@ export function ReservationPanel({
         )}
       </div>
 
-      {/* Cancel Last Reservation */}
-      {lastReservationId && (
+      {/* Bottom Reservation Status Box - Replaces empty space when no reservation exists */}
+      {lastReservationId ? (
         <div className="flex flex-col gap-2 rounded-2xl bg-slate-950/80 border border-slate-800/90 p-3.5 text-xs mt-auto">
           <div className="text-slate-400">
             Active Reservation: <span className="font-mono text-indigo-300 break-all">{lastReservationId}</span>
@@ -107,6 +108,11 @@ export function ReservationPanel({
           >
             {isCancelling ? 'Cancelling…' : 'Cancel Reservation'}
           </button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1 rounded-2xl bg-slate-950/40 border border-slate-800/60 p-3.5 text-xs text-slate-400 mt-auto">
+          <span className="font-semibold text-slate-300">Active Reservation Status</span>
+          <span className="text-[11px] text-slate-500 italic">No active reservation for this user. Select available seats above to book.</span>
         </div>
       )}
     </div>
