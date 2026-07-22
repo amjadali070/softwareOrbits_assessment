@@ -32,6 +32,11 @@ export function ReservationPanel({
 }: ReservationPanelProps) {
   const [copied, setCopied] = useState(false);
 
+  const generateRandomUserId = () => {
+    const randomId = `user_${Math.floor(1000 + Math.random() * 9000)}`;
+    onUserIdChange(randomId);
+  };
+
   const handleCopyReservationId = () => {
     if (!lastReservationId) return;
     navigator.clipboard.writeText(lastReservationId);
@@ -40,31 +45,42 @@ export function ReservationPanel({
   };
 
   return (
-    <div className="glass-card relative flex flex-col gap-6 rounded-3xl p-5 sm:p-6 shadow-2xl overflow-hidden">
-      {/* Header Title */}
-      <div className="flex items-center justify-between border-b border-slate-800/80 pb-4 pt-1">
+    <div className="glass-panel-senior relative flex flex-col gap-6 rounded-3xl p-5 sm:p-6 shadow-2xl overflow-hidden">
+      {/* Panel Header */}
+      <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
         <div className="flex items-center gap-2.5">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
             <Ticket className="h-5 w-5" />
           </div>
           <div>
             <h2 className="text-base font-bold text-white tracking-tight">Reserve Seats</h2>
-            <p className="text-xs text-slate-400">Enter User ID and submit selection</p>
+            <p className="text-xs text-slate-400">Enter User ID & confirm seats</p>
           </div>
         </div>
 
         <div className="flex items-center gap-1.5 rounded-full bg-slate-900/90 px-3 py-1 text-[11px] font-medium border border-slate-800 text-slate-300">
           <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-          <span>{isAuthenticating ? 'Auth...' : 'JWT Auth'}</span>
+          <span>{isAuthenticating ? 'Auth...' : 'JWT Secure'}</span>
         </div>
       </div>
 
-      {/* User ID Field */}
+      {/* User ID Section */}
       <div className="flex flex-col gap-2">
-        <label htmlFor="userId" className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400">
-          <User className="h-3.5 w-3.5 text-indigo-400" />
-          <span>User Identity</span>
-        </label>
+        <div className="flex items-center justify-between">
+          <label htmlFor="userId" className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400">
+            <User className="h-3.5 w-3.5 text-indigo-400" />
+            <span>User Identity</span>
+          </label>
+          <button
+            type="button"
+            onClick={generateRandomUserId}
+            className="flex items-center gap-1 text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
+            title="Generate random test User ID"
+          >
+            <RefreshCw className="h-3 w-3" />
+            <span>Randomize</span>
+          </button>
+        </div>
         <div className="relative">
           <input
             id="userId"
@@ -96,7 +112,7 @@ export function ReservationPanel({
             ))}
           </div>
         ) : (
-          <p className="text-xs italic text-slate-500 py-1">No seats selected. Tap available seats in the grid.</p>
+          <p className="text-xs italic text-slate-500 py-1">No seats selected. Click available seats in the map.</p>
         )}
       </div>
 
@@ -127,10 +143,10 @@ export function ReservationPanel({
             </>
           )}
         </span>
-        <div className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent group-hover:animate-shimmer" />
+        <div className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent group-hover:animate-shimmer-sweep" />
       </button>
 
-      {/* Senior Feedback Alert Banners */}
+      {/* Feedback Alerts */}
       {errorMessage && (
         <div role="alert" className="flex items-start gap-2.5 rounded-2xl bg-rose-950/40 border border-rose-800/60 p-3.5 text-xs text-rose-300 shadow-lg">
           <AlertCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
@@ -145,13 +161,13 @@ export function ReservationPanel({
         </div>
       )}
 
-      {/* Confirmed Reservation Ticket Card */}
+      {/* Ticket Confirmation Stub Card */}
       {lastReservationId && (
         <div className="mt-1 flex flex-col gap-3 rounded-2xl bg-slate-950/90 border border-indigo-500/30 p-4 shadow-xl relative overflow-hidden">
           <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
             <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-300">
               <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-              <span>Confirmed Reservation</span>
+              <span>Confirmed Ticket</span>
             </div>
             <button
               type="button"

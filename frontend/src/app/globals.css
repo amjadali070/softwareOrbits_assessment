@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --background: #060911;
+  --background: #060810;
   --foreground: #f8fafc;
 }
 
@@ -13,36 +13,47 @@
 }
 
 body {
-  background-color: #060911;
+  background-color: #060810;
   color: #f8fafc;
   font-family: var(--font-geist-sans), system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   overflow-x: hidden;
   background-image: 
-    radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.12) 0%, transparent 70%),
-    radial-gradient(circle at 100% 100%, rgba(139, 92, 246, 0.05) 0%, transparent 50%);
+    radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.15) 0%, transparent 65%),
+    radial-gradient(circle at 85% 90%, rgba(139, 92, 246, 0.08) 0%, transparent 50%);
   background-attachment: fixed;
 }
 
-/* Glassmorphism Surface */
-.glass-card {
-  background: rgba(15, 23, 42, 0.7);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+/* GPU Accelerated Glassmorphism Card */
+.glass-panel-senior {
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.6), inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+  transform: translateZ(0);
 }
 
-/* Cinema Screen Curved Projection Bar */
-.cinema-screen-arc {
-  background: linear-gradient(90deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.9) 50%, rgba(99, 102, 241, 0.1) 100%);
-  box-shadow: 0 0 30px rgba(168, 85, 247, 0.7), 0 0 60px rgba(99, 102, 241, 0.3);
+/* Curved Screen Projector Arc */
+.screen-arc-glow {
+  background: linear-gradient(90deg, rgba(99, 102, 241, 0.05) 0%, rgba(168, 85, 247, 0.85) 50%, rgba(99, 102, 241, 0.05) 100%);
+  box-shadow: 0 0 25px rgba(168, 85, 247, 0.7), 0 0 50px rgba(99, 102, 241, 0.3);
 }
 
-.cinema-screen-glow {
-  background: linear-gradient(180deg, rgba(168, 85, 247, 0.2) 0%, rgba(99, 102, 241, 0.05) 60%, transparent 100%);
+.screen-ambient-glow {
+  background: linear-gradient(180deg, rgba(168, 85, 247, 0.2) 0%, rgba(99, 102, 241, 0.04) 60%, transparent 100%);
 }
 
-/* Pulsing Beacon Animation */
+/* Smooth Hardware-Accelerated Seat Button */
+.seat-btn {
+  will-change: transform, box-shadow, background-color;
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+              background-color 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  transform: translateZ(0);
+}
+
+/* Pulsing Online Beacon */
 @keyframes beacon-pulse {
   0% {
     transform: scale(0.95);
@@ -58,27 +69,27 @@ body {
   }
 }
 
-.beacon-online {
-  animation: beacon-pulse 2s infinite;
+.beacon-pulse-active {
+  animation: beacon-pulse 2s infinite ease-in-out;
 }
 
 /* Shimmer Animation */
-@keyframes button-shimmer {
+@keyframes shimmer-sweep {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(100%); }
 }
 
-.animate-shimmer {
-  animation: button-shimmer 2.5s infinite;
+.animate-shimmer-sweep {
+  animation: shimmer-sweep 2.5s infinite;
 }
 
-/* Smooth Custom Scrollbars */
+/* Custom Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #060911;
+  background: #060810;
 }
 ::-webkit-scrollbar-thumb {
   background: #1e293b;

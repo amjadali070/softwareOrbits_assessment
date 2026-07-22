@@ -122,6 +122,18 @@ export default function Home() {
     setSubmitSuccess(null);
   }, []);
 
+  const handleClearSelection = useCallback(() => {
+    setSelectedSeatIds(new Set());
+  }, []);
+
+  const handleSelectQuickSeats = useCallback((count: number) => {
+    const availableSeats = seats.filter((s) => s.status === 'available');
+    if (availableSeats.length === 0) return;
+    const shuffled = [...availableSeats].sort(() => 0.5 - Math.random());
+    const selected = shuffled.slice(0, count).map((s) => s.id);
+    setSelectedSeatIds(new Set(selected));
+  }, [seats]);
+
   const handleUserIdChange = useCallback((id: string) => {
     setUserIdState(id);
     persistUserId(id);
@@ -135,7 +147,7 @@ export default function Home() {
     setSubmitError(null);
     setSubmitSuccess(null);
 
-    // Optimistic UI: reflect the booking immediately
+    // Optimistic UI: reflect booking immediately
     setSeats((current) =>
       current.map((s) =>
         optimisticSeatIds.includes(s.id) ? { ...s, status: 'reserved' as const } : s,
@@ -190,16 +202,20 @@ export default function Home() {
   }, [lastReservation, token]);
 
   return (
-    <div className="min-h-screen bg-[#060911] text-slate-100 flex flex-col selection:bg-indigo-500 selection:text-white">
+    <div className="min-h-screen bg-[#060810] text-slate-100 flex flex-col selection:bg-indigo-500 selection:text-white">
       {/* Navbar Header */}
-      <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-[#060911]/90 backdrop-blur-xl px-4 sm:px-8 py-3.5 shadow-2xl">
+      <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-[#060810]/90 backdrop-blur-xl px-4 sm:px-8 py-3.5 shadow-2xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/25">
+              <Film className="h-5 w-5" />
+            </div>
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-lg font-black tracking-tight text-white">ORBIT CINEMA</h1>
-                
+                <span className="rounded-full bg-indigo-500/10 border border-indigo-500/30 px-2 py-0.5 text-[10px] font-bold text-indigo-400 uppercase tracking-wider">
+                  Real-Time
+                </span>
               </div>
               <p className="text-xs text-slate-400">High-concurrency cinema seat reservation system</p>
             </div>
@@ -208,16 +224,16 @@ export default function Home() {
           <div className="flex items-center gap-3">
             {/* Real-time Socket Indicator */}
             <div className="flex items-center gap-2 rounded-full bg-slate-900/90 border border-slate-800 px-3 py-1.5 text-xs">
-              <span className={`h-2.5 w-2.5 rounded-full ${isConnected ? 'bg-emerald-500 beacon-online' : 'bg-rose-500 animate-pulse'}`} />
-              <span className="font-medium text-slate-300">
+              <span className={`h-2.5 w-2.5 rounded-full ${isConnected ? 'bg-emerald-500 beacon-pulse-active' : 'bg-rose-500 animate-pulse'}`} />
+              <span className="font-semibold text-slate-300">
                 {isConnected ? 'Socket Live' : 'Reconnecting...'}
               </span>
             </div>
 
             {/* Total Seats Badge */}
-            <div className="hidden sm:flex items-center gap-1.5 rounded-full bg-indigo-950/40 border border-indigo-500/30 px-3 py-1.5 text-xs text-indigo-300 font-medium">
+            <div className="hidden sm:flex items-center gap-1.5 rounded-full bg-indigo-950/40 border border-indigo-500/30 px-3 py-1.5 text-xs text-indigo-300 font-semibold">
               <Users className="h-3.5 w-3.5 text-indigo-400" />
-              <span>50 Seats Total</span>
+              <span>50 Seats</span>
             </div>
           </div>
         </div>
@@ -255,6 +271,8 @@ export default function Home() {
                 selectedSeatIds={selectedSeatIds}
                 onToggleSeat={toggleSeat}
                 disabled={isSubmitting}
+                onClearSelection={handleClearSelection}
+                onSelectQuickSeats={handleSelectQuickSeats}
               />
             </div>
             <div className="lg:col-span-4">
@@ -277,7 +295,7 @@ export default function Home() {
       </main>
 
       {/* Footer */}
-      <footer className="mt-auto border-t border-slate-800/80 bg-[#060911] px-4 py-4 text-center text-xs text-slate-500">
+      <footer className="mt-auto border-t border-slate-800/80 bg-[#060810] px-4 py-4 text-center text-xs text-slate-500">
         <div className="mx-auto max-w-7xl flex flex-col sm:flex-row items-center justify-between gap-2">
           <span className="font-semibold text-slate-400">Orbit Cinema System</span>
           <span>Distributed Concurrency Control • Next.js, Express, MongoDB ReplicaSet & Socket.IO</span>
