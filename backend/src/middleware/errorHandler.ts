@@ -15,6 +15,16 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
 
+  // express.json() throws a SyntaxError with a 4xx status for malformed request bodies — treat
+  // that (and anything else shaped the same way) as a client error, not a server fault.
+  const status = (err as { status?: unknown; statusCode?: unknown })?.status ?? (err as { statusCode?: unknown })?.statusCode;
+  if (typeof status === 'number' && status >= 400 && status < 500) {
+    res.status(status).json({
+      error: { code: 'BAD_REQUEST', message: err instanceof Error ? err.message : 'Bad request.' },
+    });
+    return;
+  }
+
   console.error('Unhandled error:', err);
   res.status(500).json({
     error: { code: 'INTERNAL_ERROR', message: 'Something went wrong.' },

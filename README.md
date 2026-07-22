@@ -46,7 +46,14 @@ This repo is being built in phases. Current state:
       and partner APIs, then verifies DB consistency directly against MongoDB. Run for real
       against one instance and against two live instances sharing one Mongo + one Redis — both
       produced **zero double-bookings**. See [High-Concurrency Simulation](#high-concurrency-simulation) for the actual output.
-- [ ] **Phase 7** — Automated tests
+- [x] **Phase 7 — Automated Tests**: 23 tests across 3 files (`npm test` in `backend/`).
+      `app.integration.test.ts` hits the real Express app with Supertest — both routes, partner
+      auth, validation errors, a malformed-JSON body, and a 20-request race split across the
+      frontend and partner routes at the HTTP layer (not just the service function). Writing the
+      malformed-JSON test surfaced a real gap — the error handler was returning `500` instead of
+      `400` for body-parser's JSON errors — now fixed.
+      `realtime.integration.test.ts` spins up a real Socket.IO server and confirms a connected
+      client actually receives `seats:snapshot` and `seats:updated` after a real reservation.
 - [ ] **Phase 8+** — Bonus items (reservation expiration, Docker, cancellation, etc.)
 
 This section will be kept up to date as phases land, and the sections below (setup, scripts,
@@ -494,6 +501,11 @@ split across two independent backend processes, not just asserted in prose.
 - The optimistic `version` field on `Seat` is technically redundant with the conditional
   `status: 'available'` filter for this scenario's needs, but is kept as defense-in-depth and to
   make future extensions (e.g. seat holds with TTL) safer to build on.
+- `setupRealtime()` returns a `close()` alongside `io`, and `server.ts` wires it into a
+  `SIGTERM`/`SIGINT` handler that closes the Socket.IO server, quits both Redis clients, and
+  disconnects Mongoose before exiting. This wasn't in the original plan — it fell out of needing
+  the real-time integration test to shut down cleanly instead of leaking Redis connections and
+  hanging the test runner, and it happens to also make production shutdowns graceful for free.
 
 ---
 

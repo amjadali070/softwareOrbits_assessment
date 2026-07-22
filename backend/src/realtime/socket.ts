@@ -11,6 +11,11 @@ import {
   type SeatsUpdatedPayload,
 } from './events';
 
+export type Realtime = {
+  io: SocketIOServer;
+  close: () => Promise<void>;
+};
+
 /**
  * Every backend instance runs its own Socket.IO server, but they all attach to the same Redis
  * pub/sub channels via the redis-adapter. When any instance's booking service emits
@@ -19,7 +24,7 @@ import {
  * to instance B still sees a reservation committed on instance A, with no direct connection
  * between the instances themselves.
  */
-export async function setupRealtime(httpServer: HttpServer): Promise<SocketIOServer> {
+export async function setupRealtime(httpServer: HttpServer): Promise<Realtime> {
   const io = new SocketIOServer(httpServer, {
     cors: { origin: env.corsOrigin },
   });
@@ -40,9 +45,16 @@ export async function setupRealtime(httpServer: HttpServer): Promise<SocketIOSer
       .catch((err) => console.error('Failed to send seats:snapshot:', err));
   });
 
-  seatEvents.on(SEATS_UPDATED_EVENT, (payload: SeatsUpdatedPayload) => {
+  const onSeatsUpdated = (payload: SeatsUpdatedPayload) => {
     io.emit(SEATS_UPDATED_EVENT, payload);
-  });
+  };
+  seatEvents.on(SEATS_UPDATED_EVENT, onSeatsUpdated);
 
-  return io;
+  const close = async () => {
+    seatEvents.off(SEATS_UPDATED_EVENT, onSeatsUpdated);
+    await new Promise<void>((resolve) => io.close(() => resolve()));
+    await Promise.all([pubClient.quit(), subClient.quit()]);
+  };
+
+  return { io, close };
 }
