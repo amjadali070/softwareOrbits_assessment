@@ -41,7 +41,11 @@ This repo is being built in phases. Current state:
       real two-tab browser test (Playwright, headless Chromium): reserving a seat in tab A updated
       tab B within the same event loop tick, with no refresh — and a mocked-conflict test confirmed
       the "seats were just taken" error path renders correctly.
-- [ ] **Phase 6** — High-concurrency simulation (100 concurrent users)
+- [x] **Phase 6 — High-Concurrency Simulation**: `npm run simulate` fires 100 concurrent
+      requests at a deliberately small, overlapping seat pool, split 50/50 between the frontend
+      and partner APIs, then verifies DB consistency directly against MongoDB. Run for real
+      against one instance and against two live instances sharing one Mongo + one Redis — both
+      produced **zero double-bookings**. See [High-Concurrency Simulation](#high-concurrency-simulation) for the actual output.
 - [ ] **Phase 7** — Automated tests
 - [ ] **Phase 8+** — Bonus items (reservation expiration, Docker, cancellation, etc.)
 
@@ -177,15 +181,16 @@ npm run dev        # http://localhost:3000
 
 **Backend** (`cd backend`)
 
-| Command          | Description                                     |
-| ---------------- | ----------------------------------------------- |
-| `npm run dev`    | Start the API with hot-reload (`ts-node-dev`)   |
-| `npm run build`  | Type-check and compile to `dist/`               |
-| `npm start`      | Run the compiled build (`dist/server.js`)       |
-| `npm run lint`   | ESLint over `src/`                              |
-| `npm run format` | Format `src/` with Prettier                     |
-| `npm test`       | Run the Vitest suite                            |
-| `npm run seed`   | Wipe and re-seed the DB with 50 available seats |
+| Command            | Description                                       |
+| ------------------ | ------------------------------------------------- |
+| `npm run dev`      | Start the API with hot-reload (`ts-node-dev`)     |
+| `npm run build`    | Type-check and compile to `dist/`                 |
+| `npm start`        | Run the compiled build (`dist/server.js`)         |
+| `npm run lint`     | ESLint over `src/`                                |
+| `npm run format`   | Format `src/` with Prettier                       |
+| `npm test`         | Run the Vitest suite                              |
+| `npm run seed`     | Wipe and re-seed the DB with 50 available seats   |
+| `npm run simulate` | Run the 100-concurrent-user load test (see below) |
 
 **Frontend** (`cd frontend`)
 
@@ -386,11 +391,88 @@ double-booking across the two traffic sources.
 
 ## High-Concurrency Simulation
 
-A load-test script (planned: `backend/src/simulation/simulate.ts`) will spin up 100 concurrent
-"users," split roughly 50/50 between the frontend API and the partner API, all targeting the same
-small pool of seats on purpose. After the run it will report attempts, successes, conflicts, and a
-DB consistency check (`available + reserved === 50`, no seat double-assigned). Instructions and
-sample output will be added here once Phase 6 lands.
+`backend/src/simulation/simulate.ts` fires 100 concurrent "virtual users" at a small, deliberately
+overlapping pool of seats (default: `A1`–`A10` — 10 seats for 100 users guarantees heavy
+contention). Each user requests 1–3 random seats from that pool. Requests are split exactly 50/50
+between `POST /api/reservations` (frontend) and `POST /api/partner/v1/reservations` (partner),
+fired together via `Promise.all`, not sequentially. Before running, it resets the target seat pool
+to `available` so the run is repeatable; afterward, it queries MongoDB directly — not the HTTP
+responses — to verify no seat was referenced by more than one reservation, and that
+`available + reserved` still equals the seat count, both for the pool and for the whole 50-seat
+table.
+
+### Running it
+
+```bash
+cd backend
+npm run seed        # first time only, or to reset the whole table
+npm run simulate     # targets http://localhost:4000 by default
+```
+
+**Against multiple instances** (to prove the multi-instance guarantee, not just assert it) — start
+two backend processes on different ports against the same Mongo + Redis, then point the script at
+both; it round-robins requests across whatever's listed:
+
+```bash
+PORT=4000 npm run dev &
+PORT=4001 npm run dev &
+SIMULATION_TARGETS="http://localhost:4000,http://localhost:4001" npm run simulate
+```
+
+Optional env vars: `SIMULATION_USERS` (default `100`), `SIMULATION_SEAT_POOL` (default `A1..A10`,
+comma-separated), `SIMULATION_TARGETS` (default `http://localhost:4000`, comma-separated).
+
+### Actual output
+
+Run against a **single instance**:
+
+```
+Simulation: 100 concurrent users, pool = [A1, A2, A3, A4, A5, A6, A7, A8, A9, A10], targets = [http://localhost:4000]
+Reset pool of 10 seats to available.
+
+--- Results ---
+Total attempts:      100
+Successful (201):    9  (frontend: 4, partner: 5)
+Conflicts (409):     91
+Bad requests (400):  0
+Errors:              0
+Elapsed:             2252ms
+
+--- DB Consistency ---
+Pool (10 seats): available=0, reserved=10, sum=10
+Whole table (50 seats): available=40, reserved=10, sum=50
+Reservations touching pool: 9
+Seats referenced by more than one reservation (double-booked): 0
+
+PASS: simulation completed with full consistency and no errors.
+```
+
+Run against **two live backend instances** (ports 4000 and 4001, same Mongo + Redis), a fresh
+pool, requests round-robined across both:
+
+```
+Simulation: 100 concurrent users, pool = [B1, B2, B3, B4, B5, B6, B7, B8, B9, B10], targets = [http://localhost:4000, http://localhost:4001]
+Reset pool of 10 seats to available.
+
+--- Results ---
+Total attempts:      100
+Successful (201):    9  (frontend: 7, partner: 2)
+Conflicts (409):     91
+Bad requests (400):  0
+Errors:              0
+Elapsed:             1661ms
+
+--- DB Consistency ---
+Pool (10 seats): available=0, reserved=10, sum=10
+Whole table (50 seats): available=40, reserved=10, sum=50
+Reservations touching pool: 9
+Seats referenced by more than one reservation (double-booked): 0
+
+PASS: simulation completed with full consistency and no errors.
+```
+
+Zero double-bookings in both runs — the second run proves it holds when requests are actually
+split across two independent backend processes, not just asserted in prose.
 
 ---
 
