@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Cinema Seat Reservation',
-  description: 'Real-time cinema seat reservation system',
+  title: 'Orbit Cinema — Real-Time Seat Reservation',
+  description: 'High-concurrency real-time cinema seat reservation system powered by Socket.IO',
 };
 
 export default function RootLayout({
@@ -23,12 +23,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}>
       {/* suppressHydrationWarning: browser extensions (Grammarly, password managers, etc.)
           inject attributes like data-gr-ext-installed onto <body> before React hydrates —
           that's a mismatch from the extension, not from this app, so it's not something to fix
           in our code. Scoped to this element only; doesn't hide real hydration bugs elsewhere. */}
-      <body className="min-h-full flex flex-col" suppressHydrationWarning>
+      <body className="min-h-full flex flex-col bg-[#070a11] text-slate-100 selection:bg-indigo-500 selection:text-white" suppressHydrationWarning>
         {children}
       </body>
     </html>
