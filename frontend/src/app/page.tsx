@@ -1,65 +1,160 @@
-import Image from 'next/image';
+'use client';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Socket } from 'socket.io-client';
+import { SeatGrid } from '@/components/SeatGrid';
+import { ReservationPanel } from '@/components/ReservationPanel';
+import { ApiError, fetchSeats, reserveSeats } from '@/lib/api';
+import { createSocket } from '@/lib/socket';
+import { getOrCreateUserId, persistUserId } from '@/lib/userId';
+import type { Seat, SeatsSnapshotPayload, SeatsUpdatedPayload } from '@/types/reservation';
 
 export default function Home() {
+  const [seats, setSeats] = useState<Seat[]>([]);
+  const [isLoadingSeats, setIsLoadingSeats] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [selectedSeatIds, setSelectedSeatIds] = useState<Set<string>>(new Set());
+  const [userId, setUserIdState] = useState('');
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
+
+  const socketRef = useRef<Socket | null>(null);
+
+  useEffect(() => {
+    // Deliberately deferred to an effect: localStorage doesn't exist during SSR, so reading it
+    // during render would mismatch the server-rendered HTML. This runs once, after hydration.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setUserIdState(getOrCreateUserId());
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchSeats()
+      .then((data) => {
+        if (!cancelled) setSeats(data);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : 'Failed to load seats.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingSeats(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const socket = createSocket();
+    socketRef.current = socket;
+
+    socket.on('seats:snapshot', (payload: SeatsSnapshotPayload) => {
+      setSeats(payload.seats);
+      setIsLoadingSeats(false);
+    });
+
+    socket.on('seats:updated', (payload: SeatsUpdatedPayload) => {
+      const updates = new Map(payload.seats.map((s) => [s.id, s.status]));
+      setSeats((current) =>
+        current.map((seat) =>
+          updates.has(seat.id) ? { ...seat, status: updates.get(seat.id)! } : seat,
+        ),
+      );
+      // If a seat we had selected just got taken (by us or someone else), drop it from selection.
+      setSelectedSeatIds((current) => {
+        const next = new Set(current);
+        for (const s of payload.seats) {
+          if (s.status === 'reserved') next.delete(s.id);
+        }
+        return next;
+      });
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
+
+  const toggleSeat = useCallback((seatId: string) => {
+    setSelectedSeatIds((current) => {
+      const next = new Set(current);
+      if (next.has(seatId)) next.delete(seatId);
+      else next.add(seatId);
+      return next;
+    });
+    setSubmitError(null);
+    setSubmitSuccess(null);
+  }, []);
+
+  const handleUserIdChange = useCallback((id: string) => {
+    setUserIdState(id);
+    persistUserId(id);
+  }, []);
+
+  const handleSubmit = useCallback(async () => {
+    if (selectedSeatIds.size === 0 || !userId.trim()) return;
+    setIsSubmitting(true);
+    setSubmitError(null);
+    setSubmitSuccess(null);
+    try {
+      const reservation = await reserveSeats(userId, [...selectedSeatIds]);
+      setSubmitSuccess(`Reserved ${reservation.seats.join(', ')}.`);
+      setSelectedSeatIds(new Set());
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.conflictingSeats?.length) {
+          setSubmitError(
+            `Seats ${err.conflictingSeats.join(', ')} were just taken — please reselect.`,
+          );
+        } else if (err.invalidSeatIds?.length) {
+          setSubmitError(`Unknown seat(s): ${err.invalidSeatIds.join(', ')}.`);
+        } else {
+          setSubmitError(err.message);
+        }
+      } else {
+        setSubmitError('Something went wrong. Please try again.');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [selectedSeatIds, userId]);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{' '}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{' '}
-            or the{' '}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{' '}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
+      <div>
+        <h1 className="text-xl font-semibold">Cinema Seat Reservation</h1>
+        <p className="text-sm text-gray-500">
+          One showing, 50 seats. Updates in real time across all open tabs.
+        </p>
+      </div>
+
+      {isLoadingSeats && <p className="text-sm text-gray-500">Loading seats…</p>}
+      {loadError && <p className="text-sm text-red-600">{loadError}</p>}
+
+      {!isLoadingSeats && !loadError && (
+        <>
+          <SeatGrid
+            seats={seats}
+            selectedSeatIds={selectedSeatIds}
+            onToggleSeat={toggleSeat}
+            disabled={isSubmitting}
+          />
+          <ReservationPanel
+            userId={userId}
+            onUserIdChange={handleUserIdChange}
+            selectedSeatIds={[...selectedSeatIds]}
+            onSubmit={handleSubmit}
+            isSubmitting={isSubmitting}
+            errorMessage={submitError}
+            successMessage={submitSuccess}
+          />
+        </>
+      )}
+    </main>
   );
 }

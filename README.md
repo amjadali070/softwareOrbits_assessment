@@ -35,7 +35,12 @@ This repo is being built in phases. Current state:
       commit. Verified with two backend instances on different ports sharing one Mongo + one
       Redis: a reservation made via instance A's HTTP API was received by a socket client
       connected only to instance B, with no direct link between the two processes.
-- [ ] **Phase 5** — Frontend seat map UI
+- [x] **Phase 5 — Frontend**: a functional seat map (`SeatGrid`) with multi-select,
+      a `ReservationPanel` with a persisted/editable user ID, loading/error/success states, and a
+      Socket.IO subscription that keeps every open tab in sync with no polling. Verified with a
+      real two-tab browser test (Playwright, headless Chromium): reserving a seat in tab A updated
+      tab B within the same event loop tick, with no refresh — and a mocked-conflict test confirmed
+      the "seats were just taken" error path renders correctly.
 - [ ] **Phase 6** — High-concurrency simulation (100 concurrent users)
 - [ ] **Phase 7** — Automated tests
 - [ ] **Phase 8+** — Bonus items (reservation expiration, Docker, cancellation, etc.)
@@ -78,8 +83,9 @@ architecture) reflect the current implementation, not the finished aspiration.
 ├── frontend/                Next.js + TypeScript UI
 │   ├── src/
 │   │   ├── app/            App Router pages
-│   │   ├── components/     SeatGrid, ReservationPanel, etc.
-│   │   └── lib/            API client, socket client
+│   │   ├── components/     SeatGrid, ReservationPanel
+│   │   ├── lib/            API client, socket client, userId persistence
+│   │   └── types/          DTOs mirroring the backend's response shapes
 │   └── .env.example
 ├── .prettierrc.json         Shared formatting config (both apps inherit it)
 └── README.md
@@ -352,6 +358,19 @@ Verified, not just designed this way: two backend instances were started on diff
 instance B, a reservation request was sent to instance A's REST API, and instance B's client
 received `seats:updated` with the correct seat and status — proving the fan-out works with zero
 coupling between instances beyond the shared Redis and MongoDB deployments.
+
+### Frontend state management
+
+There's a single `seats` array in `app/page.tsx`, kept in sync by two independent sources: an
+initial `GET /api/seats` fetch for fast first paint, and the socket's `seats:snapshot` /
+`seats:updated` events afterward — both write into the same state, so whichever arrives first
+wins and the other reconciles on top of it. Selection (`Set<string>` of seat IDs) is separate
+local UI state; the socket handler proactively removes a seat from the current selection the
+moment it's reported `reserved` by anyone (not just the current user), so a user can never submit
+a request for a seat the UI already knows is gone. On submit, the HTTP response is the source of
+truth for that request's own success/failure message; the grid's visual state updates from the
+`seats:updated` broadcast like it would for any other client — the submitting tab doesn't special-
+case itself.
 
 ---
 
