@@ -190,9 +190,9 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#060810] text-slate-100 flex flex-col selection:bg-indigo-500 selection:text-white">
-      {/* Header */}
-      <header className="border-b border-slate-800/80 bg-[#060810]/90 backdrop-blur-xl px-4 sm:px-8 py-4 shadow-xl">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
+      {/* Header Navbar - Aligned perfectly with main grid container */}
+      <header className="border-b border-slate-800/80 bg-[#060810]/90 backdrop-blur-xl py-4 shadow-xl">
+        <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
           <div>
             <h1 className="text-xl font-extrabold tracking-tight text-white">
               Real-Time Cinema Seat Reservation
@@ -211,8 +211,8 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Main Container */}
-      <main className="mx-auto w-full max-w-6xl flex-1 p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
+      {/* Main Container - Identical horizontal padding and max width as Header */}
+      <main className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 flex-1 flex flex-col gap-6">
         {isLoadingSeats && (
           <p className="text-sm text-slate-400 py-16 text-center">Loading seat availability…</p>
         )}
@@ -222,8 +222,8 @@ export default function Home() {
         )}
 
         {!isLoadingSeats && !loadError && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
-            <div className="lg:col-span-8">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-stretch">
+            <div className="lg:col-span-8 flex flex-col">
               <SeatGrid
                 seats={seats}
                 selectedSeatIds={selectedSeatIds}
@@ -231,7 +231,7 @@ export default function Home() {
                 disabled={isSubmitting}
               />
             </div>
-            <div className="lg:col-span-4">
+            <div className="lg:col-span-4 flex flex-col">
               <ReservationPanel
                 userId={userId}
                 onUserIdChange={handleUserIdChange}
@@ -251,8 +251,8 @@ export default function Home() {
       </main>
 
       {/* Footer */}
-      <footer className="mt-auto border-t border-slate-800/80 bg-[#060810] px-4 py-4 text-center text-xs text-slate-500">
-        <div className="mx-auto max-w-6xl flex flex-col sm:flex-row items-center justify-between gap-2">
+      <footer className="mt-auto border-t border-slate-800/80 bg-[#060810] py-4 text-center text-xs text-slate-500">
+        <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>Cinema Seat Reservation System</span>
           <span>Next.js • Express • MongoDB ReplicaSet • Socket.IO</span>
         </div>
