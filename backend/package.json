@@ -9,7 +9,8 @@
     "start": "node dist/server.js",
     "lint": "eslint src",
     "format": "prettier --write \"src/**/*.ts\"",
-    "test": "vitest run"
+    "test": "vitest run",
+    "seed": "ts-node --transpile-only src/scripts/seed.ts"
   },
   "keywords": [],
   "author": "",
