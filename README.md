@@ -24,7 +24,12 @@ This repo is being built in phases. Current state:
       MongoDB transaction for all-or-nothing multi-seat booking; unknown seat IDs, availability
       conflicts, and bad input each return a distinct typed result. Covered by a Vitest suite
       including a 20-concurrent-request race against 3 seats (`npm test` in `backend/`).
-- [ ] **Phase 3** — Backend REST APIs (frontend-facing + third-party partner)
+- [x] **Phase 3 — Backend REST APIs**: `GET /api/seats`, `GET /api/seats/availability`,
+      `POST /api/reservations` (frontend), and `POST /api/partner/v1/reservations` (partner, API
+      key required) all live. Both reservation routes are wired to the exact same handler
+      function — see [API Reference](#api-reference). Zod-validated input, centralized JSON error
+      shape, and a live 10-concurrent-request test spanning both routes against one seat produced
+      exactly one `201` and nine `409`s.
 - [ ] **Phase 4** — Real-time layer (Socket.IO + Redis adapter, multi-instance fan-out)
 - [ ] **Phase 5** — Frontend seat map UI
 - [ ] **Phase 6** — High-concurrency simulation (100 concurrent users)
@@ -183,6 +188,55 @@ npm run dev        # http://localhost:3000
 
 ---
 
+## API Reference
+
+All responses are JSON. Errors always have the shape
+`{ "error": { "code": string, "message": string, ...extra } }`.
+
+### `GET /api/seats`
+
+Returns every seat. `200`:
+
+```json
+{ "seats": [{ "id": "A1", "row": "A", "number": 1, "status": "available" }, ...] }
+```
+
+### `GET /api/seats/availability`
+
+Same shape as above, filtered to `status: "available"` only.
+
+### `POST /api/reservations` (frontend path)
+
+Body: `{ "userId": string, "seatIds": string[] }`
+
+| Outcome                         | Status | Body                                                                                    |
+| ------------------------------- | ------ | --------------------------------------------------------------------------------------- |
+| Booked                          | `201`  | `{ "reservation": { reservationId, userId, seats, source, status, createdAt } }`        |
+| One or more seats already taken | `409`  | `{ "error": { "code": "SEATS_UNAVAILABLE", "message", "conflictingSeats": string[] } }` |
+| Unknown seat id(s)              | `400`  | `{ "error": { "code": "INVALID_SEATS", "message", "invalidSeatIds": string[] } }`       |
+| Malformed body (empty/missing)  | `400`  | `{ "error": { "code": "INVALID_INPUT", "message", "details" } }`                        |
+
+A conflict never partially books — if any requested seat is unavailable, none of the seats in that
+request are reserved (see [Concurrency strategy](#concurrency-strategy)).
+
+### `POST /api/partner/v1/reservations` (third-party path)
+
+Identical contract and status codes to the route above, plus a required header:
+
+```
+x-api-key: <PARTNER_API_KEY>
+```
+
+Missing or wrong key → `401` `{ "error": { "code": "UNAUTHORIZED", "message" } }`. Otherwise this
+route calls the exact same booking function as the frontend route — see
+[Shared booking logic](#shared-booking-logic-frontend--third-party-parity).
+
+### `GET /health`
+
+Liveness check, `200` `{ "status": "ok" }` — not part of the seat/reservation API surface.
+
+---
+
 ## Architecture & Design Decisions
 
 ### Data model (MongoDB)
@@ -222,20 +276,37 @@ already-claimed seat.
 
 ### Shared booking logic (frontend + third-party parity)
 
-Both the frontend-facing route and the third-party partner route will call **one function**
-(routes land in Phase 3; the function itself already exists and is fully tested independent of
-any HTTP layer):
+Both the frontend-facing route and the third-party partner route call **one function**:
 
 ```ts
 reserveSeats(userId: string, seatIds: string[], source: 'frontend' | 'partner'): Promise<ReservationResult>
 ```
 
 This function is the single source of truth for booking rules and lives in
-`backend/src/services/reservation.service.ts`. The two Express routes will be thin controllers
-that validate input, call this function, and translate the result into an HTTP response. Neither
-route will implement its own booking logic — this is what guarantees a partner request and a
-frontend request racing for the same seat are resolved by the exact same code path and the exact
-same database-level guarantee.
+`backend/src/services/reservation.service.ts`. Rather than relying on two separately-written
+controllers happening to look similar, `backend/src/routes/reservationHandler.ts` exports
+**one** `createReservationHandler(source)` factory that both routes mount:
+
+```ts
+// reservations.routes.ts (frontend)
+router.post('/', validateBody(reserveSeatsRequestSchema), createReservationHandler('frontend'));
+
+// partner.routes.ts (third-party)
+router.post(
+  '/v1/reservations',
+  partnerAuth,
+  validateBody(reserveSeatsRequestSchema),
+  createReservationHandler('partner'),
+);
+```
+
+The only differences between the two routes are the URL, the partner-only API-key middleware, and
+the `source` tag passed through to `reserveSeats`. There is no second implementation of booking
+rules to drift out of sync — this is what guarantees a partner request and a frontend request
+racing for the same seat are resolved by the exact same code path and the exact same
+database-level guarantee. Verified live: 10 concurrent requests (5 via each route) targeting one
+seat produced exactly one `201` and nine `409`s, and a direct partner-vs-frontend conflict test
+(reserve via frontend, then try the same seat via partner) correctly returned `409`.
 
 ### Correctness across multiple backend instances
 
