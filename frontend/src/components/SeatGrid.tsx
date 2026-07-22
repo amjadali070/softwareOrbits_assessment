@@ -19,19 +19,35 @@ export function SeatGrid({
 }: SeatGridProps) {
   const rows = useMemo(() => groupByRow(seats), [seats]);
 
+  const stats = useMemo(() => {
+    let available = 0;
+    let reserved = 0;
+    for (const seat of seats) {
+      if (seat.status === 'available') available++;
+      else if (seat.status === 'reserved') reserved++;
+    }
+    return {
+      available,
+      reserved,
+      selected: selectedSeatIds.size,
+      total: seats.length,
+    };
+  }, [seats, selectedSeatIds]);
+
   return (
     <div className="glass-panel-senior flex flex-col justify-between h-full gap-6 rounded-3xl p-5 sm:p-7 shadow-2xl">
-      <div>
-        {/* Screen Bar */}
-        <div className="flex flex-col items-center gap-2 pt-2 pb-4 border-b border-slate-800/80">
-          <div className="h-1.5 w-full max-w-md rounded-full bg-gradient-to-r from-indigo-500/20 via-indigo-400 to-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.5)]" />
-          <span className="text-[11px] font-extrabold tracking-[0.25em] text-indigo-300 uppercase select-none">
-            SCREEN
-          </span>
-        </div>
+      {/* Top Screen Bar */}
+      <div className="flex flex-col items-center gap-2 pt-2 pb-4 border-b border-slate-800/80">
+        <div className="h-1.5 w-full max-w-md rounded-full bg-gradient-to-r from-indigo-500/20 via-indigo-400 to-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.5)]" />
+        <span className="text-[11px] font-extrabold tracking-[0.25em] text-indigo-300 uppercase select-none">
+          SCREEN
+        </span>
+      </div>
 
+      {/* Middle Vertically Centered Content Container */}
+      <div className="flex-1 flex flex-col justify-center items-center my-auto py-2 gap-4">
         {/* Seat Grid */}
-        <div className="overflow-x-auto pb-2 pt-4">
+        <div className="overflow-x-auto w-full flex justify-center pb-1">
           <div className="min-w-[420px] flex flex-col gap-3.5 items-center">
             {rows.map(([row, rowSeats]) => (
               <div key={row} className="flex items-center gap-3">
@@ -75,23 +91,34 @@ export function SeatGrid({
             ))}
           </div>
         </div>
+
+        {/* Guidance UX Message */}
+        <p className="text-xs text-slate-400 text-center font-medium">
+          {stats.selected > 0 ? (
+            <span className="text-amber-300 font-semibold">
+              {stats.selected} seat{stats.selected > 1 ? 's' : ''} selected — ready to reserve
+            </span>
+          ) : (
+            <span>Click any available green seat to select for reservation</span>
+          )}
+        </p>
       </div>
 
-      {/* Legend */}
-      <div className="flex items-center justify-center gap-6 border-t border-slate-800/80 pt-4 text-xs font-medium">
+      {/* Bottom Legend with Live Counts */}
+      <div className="flex flex-wrap items-center justify-center gap-6 border-t border-slate-800/80 pt-4 text-xs font-medium">
         <div className="flex items-center gap-2">
           <span className="h-3 w-3 rounded-md bg-emerald-950/60 border border-emerald-500/40" />
-          <span className="text-slate-300">Available</span>
+          <span className="text-slate-300">Available ({stats.available})</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="h-3 w-3 rounded-md bg-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
-          <span className="text-amber-300 font-semibold">Selected</span>
+          <span className="text-amber-300 font-semibold">Selected ({stats.selected})</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="h-3.5 w-3.5 rounded-md bg-slate-900 border border-slate-800 flex items-center justify-center">
             <Lock className="h-2.5 w-2.5 text-slate-500" />
           </span>
-          <span className="text-slate-500">Reserved</span>
+          <span className="text-slate-500">Reserved ({stats.reserved})</span>
         </div>
       </div>
     </div>
