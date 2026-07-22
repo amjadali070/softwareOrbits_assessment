@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
-import { Film, Users, RefreshCw, AlertCircle } from 'lucide-react';
 import { SeatGrid } from '@/components/SeatGrid';
 import { ReservationPanel } from '@/components/ReservationPanel';
 import { ApiError, cancelReservation, fetchSeats, login, reserveSeats } from '@/lib/api';
@@ -122,18 +121,6 @@ export default function Home() {
     setSubmitSuccess(null);
   }, []);
 
-  const handleClearSelection = useCallback(() => {
-    setSelectedSeatIds(new Set());
-  }, []);
-
-  const handleSelectQuickSeats = useCallback((count: number) => {
-    const availableSeats = seats.filter((s) => s.status === 'available');
-    if (availableSeats.length === 0) return;
-    const shuffled = [...availableSeats].sort(() => 0.5 - Math.random());
-    const selected = shuffled.slice(0, count).map((s) => s.id);
-    setSelectedSeatIds(new Set(selected));
-  }, [seats]);
-
   const handleUserIdChange = useCallback((id: string) => {
     setUserIdState(id);
     persistUserId(id);
@@ -159,7 +146,7 @@ export default function Home() {
 
     try {
       const reservation = await reserveSeats(token, userId, optimisticSeatIds, idempotencyKey);
-      setSubmitSuccess(`Successfully reserved seat(s) ${reservation.seats.join(', ')}.`);
+      setSubmitSuccess(`Reserved ${reservation.seats.join(', ')}.`);
       setLastReservation({ reservationId: reservation.reservationId, seats: reservation.seats });
     } catch (err) {
       const conflicting = err instanceof ApiError ? (err.conflictingSeats ?? []) : [];
@@ -203,64 +190,35 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#060810] text-slate-100 flex flex-col selection:bg-indigo-500 selection:text-white">
-      {/* Navbar Header */}
-      <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-[#060810]/90 backdrop-blur-xl px-4 sm:px-8 py-3.5 shadow-2xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/25">
-              <Film className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-lg font-black tracking-tight text-white">ORBIT CINEMA</h1>
-                <span className="rounded-full bg-indigo-500/10 border border-indigo-500/30 px-2 py-0.5 text-[10px] font-bold text-indigo-400 uppercase tracking-wider">
-                  Real-Time
-                </span>
-              </div>
-              <p className="text-xs text-slate-400">High-concurrency cinema seat reservation system</p>
-            </div>
+      {/* Header */}
+      <header className="border-b border-slate-800/80 bg-[#060810]/90 backdrop-blur-xl px-4 sm:px-8 py-4 shadow-xl">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-extrabold tracking-tight text-white">
+              Real-Time Cinema Seat Reservation
+            </h1>
+            <p className="text-xs text-slate-400 mt-0.5">
+              One showing, 50 seats. Live real-time updates via Socket.IO across all open tabs.
+            </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            {/* Real-time Socket Indicator */}
-            <div className="flex items-center gap-2 rounded-full bg-slate-900/90 border border-slate-800 px-3 py-1.5 text-xs">
-              <span className={`h-2.5 w-2.5 rounded-full ${isConnected ? 'bg-emerald-500 beacon-pulse-active' : 'bg-rose-500 animate-pulse'}`} />
-              <span className="font-semibold text-slate-300">
-                {isConnected ? 'Socket Live' : 'Reconnecting...'}
-              </span>
-            </div>
-
-            {/* Total Seats Badge */}
-            <div className="hidden sm:flex items-center gap-1.5 rounded-full bg-indigo-950/40 border border-indigo-500/30 px-3 py-1.5 text-xs text-indigo-300 font-semibold">
-              <Users className="h-3.5 w-3.5 text-indigo-400" />
-              <span>50 Seats</span>
-            </div>
+          <div className="flex items-center gap-2 rounded-full bg-slate-900/90 border border-slate-800 px-3 py-1.5 text-xs font-medium">
+            <span className={`h-2.5 w-2.5 rounded-full ${isConnected ? 'bg-emerald-500 beacon-pulse-active' : 'bg-rose-500 animate-pulse'}`} />
+            <span className="text-slate-300">
+              {isConnected ? 'Socket Live' : 'Reconnecting...'}
+            </span>
           </div>
         </div>
       </header>
 
       {/* Main Container */}
-      <main className="mx-auto w-full max-w-7xl flex-1 p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
+      <main className="mx-auto w-full max-w-6xl flex-1 p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
         {isLoadingSeats && (
-          <div className="flex flex-col items-center justify-center py-24 gap-3">
-            <RefreshCw className="h-8 w-8 animate-spin text-indigo-500" />
-            <p className="text-sm font-medium text-slate-400">Connecting to seat inventory stream...</p>
-          </div>
+          <p className="text-sm text-slate-400 py-16 text-center">Loading seat availability…</p>
         )}
 
         {loadError && (
-          <div className="mx-auto max-w-lg rounded-3xl bg-rose-950/40 border border-rose-800 p-6 flex flex-col items-center text-center gap-3 shadow-2xl">
-            <AlertCircle className="h-10 w-10 text-rose-400" />
-            <h3 className="text-lg font-bold text-white">Connection Failure</h3>
-            <p className="text-xs text-rose-300">{loadError}</p>
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              className="mt-2 rounded-2xl bg-rose-900 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-800 transition-colors"
-            >
-              Retry Connection
-            </button>
-          </div>
+          <p className="text-sm text-rose-500 py-16 text-center">{loadError}</p>
         )}
 
         {!isLoadingSeats && !loadError && (
@@ -271,8 +229,6 @@ export default function Home() {
                 selectedSeatIds={selectedSeatIds}
                 onToggleSeat={toggleSeat}
                 disabled={isSubmitting}
-                onClearSelection={handleClearSelection}
-                onSelectQuickSeats={handleSelectQuickSeats}
               />
             </div>
             <div className="lg:col-span-4">
@@ -296,9 +252,9 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="mt-auto border-t border-slate-800/80 bg-[#060810] px-4 py-4 text-center text-xs text-slate-500">
-        <div className="mx-auto max-w-7xl flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span className="font-semibold text-slate-400">Orbit Cinema System</span>
-          <span>Distributed Concurrency Control • Next.js, Express, MongoDB ReplicaSet & Socket.IO</span>
+        <div className="mx-auto max-w-6xl flex flex-col sm:flex-row items-center justify-between gap-2">
+          <span>Cinema Seat Reservation System</span>
+          <span>Next.js • Express • MongoDB ReplicaSet • Socket.IO</span>
         </div>
       </footer>
     </div>
