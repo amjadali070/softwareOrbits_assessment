@@ -41,11 +41,7 @@ export function SeatGrid({
 
       {/* Screen Header */}
       <div className="relative flex flex-col items-center gap-2 pt-2 pb-4">
-        <div className="relative w-full max-w-lg">
-          {/* Curved Light Arc */}
-          <div className="h-2 w-full rounded-t-full cinema-screen-arc" />
-          <div className="h-8 w-full bg-gradient-to-b from-indigo-500/15 via-purple-500/5 to-transparent blur-md -mt-0.5" />
-        </div>
+        
         <div className="flex items-center gap-2 text-[11px] font-bold tracking-[0.25em] text-indigo-300 uppercase">
           <Monitor className="h-3.5 w-3.5 text-indigo-400" />
           <span>Screen</span>

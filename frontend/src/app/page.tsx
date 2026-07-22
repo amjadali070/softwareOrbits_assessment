@@ -195,15 +195,11 @@ export default function Home() {
       <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-[#060911]/90 backdrop-blur-xl px-4 sm:px-8 py-3.5 shadow-2xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/25">
-              <Film className="h-5 w-5" />
-            </div>
+            
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-lg font-black tracking-tight text-white">ORBIT CINEMA</h1>
-                <span className="rounded-full bg-indigo-500/10 border border-indigo-500/30 px-2 py-0.5 text-[10px] font-bold text-indigo-400 uppercase tracking-wider">
-                  Real-Time
-                </span>
+                
               </div>
               <p className="text-xs text-slate-400">High-concurrency cinema seat reservation system</p>
             </div>

@@ -41,9 +41,6 @@ export function ReservationPanel({
 
   return (
     <div className="glass-card relative flex flex-col gap-6 rounded-3xl p-5 sm:p-6 shadow-2xl overflow-hidden">
-      {/* Accent Header Bar */}
-      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-amber-500" />
-
       {/* Header Title */}
       <div className="flex items-center justify-between border-b border-slate-800/80 pb-4 pt-1">
         <div className="flex items-center gap-2.5">
