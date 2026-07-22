@@ -30,7 +30,11 @@ This repo is being built in phases. Current state:
       function — see [API Reference](#api-reference). Zod-validated input, centralized JSON error
       shape, and a live 10-concurrent-request test spanning both routes against one seat produced
       exactly one `201` and nine `409`s.
-- [ ] **Phase 4** — Real-time layer (Socket.IO + Redis adapter, multi-instance fan-out)
+- [x] **Phase 4 — Real-Time Layer**: Socket.IO attached to the HTTP server, `@socket.io/redis-adapter`
+      for cross-instance fan-out, `seats:snapshot` on connect and `seats:updated` after every
+      commit. Verified with two backend instances on different ports sharing one Mongo + one
+      Redis: a reservation made via instance A's HTTP API was received by a socket client
+      connected only to instance B, with no direct link between the two processes.
 - [ ] **Phase 5** — Frontend seat map UI
 - [ ] **Phase 6** — High-concurrency simulation (100 concurrent users)
 - [ ] **Phase 7** — Automated tests
@@ -43,15 +47,15 @@ architecture) reflect the current implementation, not the finished aspiration.
 
 ## Tech Stack
 
-| Layer     | Choice                                                           |
-| --------- | ---------------------------------------------------------------- |
-| Language  | TypeScript (strict mode) end-to-end                              |
-| Frontend  | Next.js (App Router) + React                                     |
-| Backend   | Express.js                                                       |
-| Database  | MongoDB + Mongoose (replica set — required for transactions)     |
-| Real-time | Socket.IO + `@socket.io/redis-adapter` + Redis (planned Phase 4) |
-| Testing   | Vitest + Supertest                                               |
-| Tooling   | ESLint (flat config) + Prettier (shared root config)             |
+| Layer     | Choice                                                       |
+| --------- | ------------------------------------------------------------ |
+| Language  | TypeScript (strict mode) end-to-end                          |
+| Frontend  | Next.js (App Router) + React                                 |
+| Backend   | Express.js                                                   |
+| Database  | MongoDB + Mongoose (replica set — required for transactions) |
+| Real-time | Socket.IO + `@socket.io/redis-adapter` + Redis               |
+| Testing   | Vitest + Supertest                                           |
+| Tooling   | ESLint (flat config) + Prettier (shared root config)         |
 
 ---
 
@@ -93,7 +97,8 @@ architecture) reflect the current implementation, not the finished aspiration.
 - Node.js 20+
 - npm 10+
 - MongoDB, running as a **replica set** (see note below)
-- Redis — required starting Phase 4
+- Redis (e.g. `docker run -d -p 6379:6379 redis:7` or a local install) — required for the
+  Socket.IO adapter, even with a single backend instance
 
 ### MongoDB replica set (required now)
 
@@ -235,6 +240,18 @@ route calls the exact same booking function as the frontend route — see
 
 Liveness check, `200` `{ "status": "ok" }` — not part of the seat/reservation API surface.
 
+### Real-time events (Socket.IO)
+
+Connect a Socket.IO client to the backend's base URL (no separate path/namespace).
+
+| Event            | Direction       | Payload                       | When                                                                                                                                                |
+| ---------------- | --------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `seats:snapshot` | server → client | `{ seats: SeatDTO[] }`        | Once, right after a client connects — full current seat state so a freshly opened tab doesn't have to wait for the next reservation.                |
+| `seats:updated`  | server → client | `{ seats: { id, status }[] }` | After every successful reservation, on **every** connected client, regardless of which backend instance served the request or which client made it. |
+
+There is no client → server event in this system — sockets are read-only status feeds; all writes
+go through the REST endpoints above.
+
 ---
 
 ## Architecture & Design Decisions
@@ -320,14 +337,21 @@ layer.
 
 ### Real-time updates across instances
 
-Each backend instance runs its own Socket.IO server, but all instances share a Redis pub/sub
-channel via `@socket.io/redis-adapter`. When any instance commits a reservation, it emits
-`seats:updated`; Redis fans that event out to every connected client on every instance — so a
-browser connected to instance B still sees a reservation made through instance A, with no polling
-or refresh required.
+Each backend instance runs its own Socket.IO server (`realtime/socket.ts`, attached to the same
+HTTP server as Express), but all instances share Redis pub/sub channels via
+`@socket.io/redis-adapter`. The booking service never talks to Socket.IO directly — after a
+successful commit it calls `seatEvents.emitSeatsUpdated(...)` on a plain Node `EventEmitter`
+(`realtime/events.ts`), and the socket layer is just one subscriber to that emitter. That instance
+then calls `io.emit('seats:updated', payload)`; the redis-adapter fans it out through Redis to
+every other instance's connected sockets. A client connected to instance B receives an update
+triggered by a reservation made through instance A, with **no direct connection between the two
+backend processes** — Redis is the only thing they share for this.
 
-_(Real-time layer lands in Phase 4 — this section describes the design; implementation status is
-tracked above.)_
+Verified, not just designed this way: two backend instances were started on different ports
+(4000 and 4001) against one shared MongoDB and one shared Redis. A socket client connected only to
+instance B, a reservation request was sent to instance A's REST API, and instance B's client
+received `seats:updated` with the correct seat and status — proving the fan-out works with zero
+coupling between instances beyond the shared Redis and MongoDB deployments.
 
 ---
 
