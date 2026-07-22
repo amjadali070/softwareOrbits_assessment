@@ -1,0 +1,117 @@
+x-backend-env: &backend-env
+  MONGO_URI: mongodb://mongo:27017/cinema?replicaSet=rs0
+  REDIS_URL: redis://redis:6379
+  PARTNER_API_KEY: partner-secret-key
+  CORS_ORIGIN: http://localhost:3000
+  JWT_SECRET: dev-only-jwt-secret-change-me
+  JWT_EXPIRES_IN: 24h
+  RESERVATION_TTL_MS: 300000
+  EXPIRATION_SWEEP_INTERVAL_MS: 15000
+
+services:
+  mongo:
+    image: mongo:7
+    command: ['--replSet', 'rs0', '--bind_ip_all']
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: initiates the single-node replica set exactly once, then exits. Every other
+  # service that needs Mongo depends on this completing successfully first.
+  mongo-init:
+    image: mongo:7
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: 'no'
+    command: >
+      mongosh --host mongo --quiet --eval "
+        try { rs.status(); } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'mongo:27017' }] }); }
+      "
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+
+  # One-shot: seeds 50 available seats. Safe to re-run (the seed script wipes and re-inserts).
+  seed:
+    build:
+      context: ./backend
+    image: cinema-backend:local
+    command: ['node', 'dist/scripts/seed.js']
+    environment:
+      <<: *backend-env
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    restart: 'no'
+
+  # Two separate backend instances (not `--scale`, so each gets a stable, individually
+  # reachable host port) — this is what actually demonstrates the multi-instance story: both
+  # share the same Mongo + Redis, neither knows the other exists, and nginx round-robins
+  # between them.
+  backend1:
+    build:
+      context: ./backend
+    image: cinema-backend:local
+    ports:
+      - '4000:4000'
+    environment:
+      <<: *backend-env
+      PORT: 4000
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+
+  backend2:
+    build:
+      context: ./backend
+    image: cinema-backend:local
+    ports:
+      - '4001:4000'
+    environment:
+      <<: *backend-env
+      PORT: 4000
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+
+  # Load balancer in front of backend1/backend2 — the browser and the simulation script talk
+  # to this, never directly to either backend instance, matching "deployed behind a load
+  # balancer" from the brief.
+  nginx:
+    image: nginx:alpine
+    ports:
+      - '8080:80'
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend1
+      - backend2
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Baked into the client bundle at build time — must be the URL the *browser* will use
+        # (the load balancer's host-exposed port), not an internal Docker service name.
+        NEXT_PUBLIC_API_URL: http://localhost:8080
+        NEXT_PUBLIC_SOCKET_URL: http://localhost:8080
+    ports:
+      - '3000:3000'
+    depends_on:
+      - nginx
+
+volumes:
+  mongo-data:

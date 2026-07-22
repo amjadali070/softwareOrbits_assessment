@@ -4,6 +4,7 @@ import { env } from './config/env';
 import seatsRouter from './routes/seats.routes';
 import reservationsRouter from './routes/reservations.routes';
 import partnerRouter from './routes/partner.routes';
+import authRouter from './routes/auth.routes';
 import { errorHandler } from './middleware/errorHandler';
 
 export function createApp() {
@@ -16,6 +17,7 @@ export function createApp() {
     res.json({ status: 'ok' });
   });
 
+  app.use('/api/auth', authRouter);
   app.use('/api/seats', seatsRouter);
   app.use('/api/reservations', reservationsRouter);
   app.use('/api/partner', partnerRouter);

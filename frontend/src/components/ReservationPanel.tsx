@@ -6,8 +6,12 @@ type ReservationPanelProps = {
   selectedSeatIds: string[];
   onSubmit: () => void;
   isSubmitting: boolean;
+  isAuthenticating: boolean;
   errorMessage: string | null;
   successMessage: string | null;
+  lastReservationId: string | null;
+  onCancelLastReservation: () => void;
+  isCancelling: boolean;
 };
 
 export function ReservationPanel({
@@ -16,8 +20,12 @@ export function ReservationPanel({
   selectedSeatIds,
   onSubmit,
   isSubmitting,
+  isAuthenticating,
   errorMessage,
   successMessage,
+  lastReservationId,
+  onCancelLastReservation,
+  isCancelling,
 }: ReservationPanelProps) {
   return (
     <div className="flex flex-col gap-3 rounded border border-gray-200 p-4">
@@ -44,12 +52,16 @@ export function ReservationPanel({
       <button
         type="button"
         onClick={onSubmit}
-        disabled={isSubmitting || selectedSeatIds.length === 0 || !userId.trim()}
+        disabled={
+          isSubmitting || isAuthenticating || selectedSeatIds.length === 0 || !userId.trim()
+        }
         className="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
       >
         {isSubmitting
           ? 'Reserving…'
-          : `Reserve ${selectedSeatIds.length || ''} seat${selectedSeatIds.length === 1 ? '' : 's'}`}
+          : isAuthenticating
+            ? 'Authenticating…'
+            : `Reserve ${selectedSeatIds.length || ''} seat${selectedSeatIds.length === 1 ? '' : 's'}`}
       </button>
 
       {errorMessage && (
@@ -61,6 +73,17 @@ export function ReservationPanel({
         <p role="status" className="text-sm text-green-600">
           {successMessage}
         </p>
+      )}
+
+      {lastReservationId && (
+        <button
+          type="button"
+          onClick={onCancelLastReservation}
+          disabled={isCancelling}
+          className="rounded border border-red-300 px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isCancelling ? 'Cancelling…' : 'Cancel this reservation'}
+        </button>
       )}
     </div>
   );

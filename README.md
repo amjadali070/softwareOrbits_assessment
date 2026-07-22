@@ -46,15 +46,22 @@ This repo is being built in phases. Current state:
       and partner APIs, then verifies DB consistency directly against MongoDB. Run for real
       against one instance and against two live instances sharing one Mongo + one Redis — both
       produced **zero double-bookings**. See [High-Concurrency Simulation](#high-concurrency-simulation) for the actual output.
-- [x] **Phase 7 — Automated Tests**: 23 tests across 3 files (`npm test` in `backend/`).
-      `app.integration.test.ts` hits the real Express app with Supertest — both routes, partner
-      auth, validation errors, a malformed-JSON body, and a 20-request race split across the
-      frontend and partner routes at the HTTP layer (not just the service function). Writing the
-      malformed-JSON test surfaced a real gap — the error handler was returning `500` instead of
-      `400` for body-parser's JSON errors — now fixed.
+- [x] **Phase 7 — Automated Tests**: `app.integration.test.ts` hits the real Express app with
+      Supertest — both routes, partner auth, validation errors, a malformed-JSON body, and a
+      20-request race split across the frontend and partner routes at the HTTP layer (not just
+      the service function). Writing the malformed-JSON test surfaced a real gap — the error
+      handler was returning `500` instead of `400` for body-parser's JSON errors — now fixed.
       `realtime.integration.test.ts` spins up a real Socket.IO server and confirms a connected
       client actually receives `seats:snapshot` and `seats:updated` after a real reservation.
-- [ ] **Phase 8+** — Bonus items (reservation expiration, Docker, cancellation, etc.)
+- [x] **Phase 8 — Bonus Features** (all of them — see [Bonus Features](#bonus-features) for
+      full detail on each): reservation expiration (background sweep releases seats ~5 min after
+      booking), reservation cancellation (`DELETE /api/reservations/:id`, shared by both
+      frontend and partner paths), a retry-safe `Idempotency-Key` header, minimal JWT
+      authentication on the frontend path, optimistic UI updates with rollback-on-conflict, and
+      a full Docker Compose stack (Mongo replica set + Redis + two backend instances behind an
+      nginx load balancer + frontend). Test suite grew from 23 to **40 tests**, still all
+      passing. Verified live in a real browser (Playwright) end-to-end: login → optimistic
+      reserve → cancel → both tabs stay in sync throughout.
 
 This section will be kept up to date as phases land, and the sections below (setup, scripts,
 architecture) reflect the current implementation, not the finished aspiration.
@@ -63,15 +70,17 @@ architecture) reflect the current implementation, not the finished aspiration.
 
 ## Tech Stack
 
-| Layer     | Choice                                                       |
-| --------- | ------------------------------------------------------------ |
-| Language  | TypeScript (strict mode) end-to-end                          |
-| Frontend  | Next.js (App Router) + React                                 |
-| Backend   | Express.js                                                   |
-| Database  | MongoDB + Mongoose (replica set — required for transactions) |
-| Real-time | Socket.IO + `@socket.io/redis-adapter` + Redis               |
-| Testing   | Vitest + Supertest                                           |
-| Tooling   | ESLint (flat config) + Prettier (shared root config)         |
+| Layer      | Choice                                                                          |
+| ---------- | ------------------------------------------------------------------------------- |
+| Language   | TypeScript (strict mode) end-to-end                                             |
+| Frontend   | Next.js (App Router) + React                                                    |
+| Backend    | Express.js                                                                      |
+| Database   | MongoDB + Mongoose (replica set — required for transactions)                    |
+| Real-time  | Socket.IO + `@socket.io/redis-adapter` + Redis                                  |
+| Auth       | Minimal JWT (`jsonwebtoken`) on the frontend path                               |
+| Testing    | Vitest + Supertest + Playwright (manual browser verification)                   |
+| Tooling    | ESLint (flat config) + Prettier (shared root config)                            |
+| Containers | Docker + Docker Compose (Mongo replica set, Redis, 2× backend, nginx, frontend) |
 
 ---
 
@@ -79,26 +88,31 @@ architecture) reflect the current implementation, not the finished aspiration.
 
 ```
 .
-├── backend/                Express + TypeScript API
+├── backend/                 Express + TypeScript API
 │   ├── src/
-│   │   ├── app.ts          Express app factory
-│   │   ├── server.ts       HTTP server entrypoint
-│   │   ├── config/         env loading, db/redis connections
-│   │   ├── models/         Mongoose schemas (Seat, Reservation)
-│   │   ├── services/       reservation.service.ts — shared booking logic
-│   │   ├── routes/         frontend + partner route handlers
-│   │   ├── middleware/      error handling, partner API-key auth
-│   │   ├── realtime/       Socket.IO + Redis adapter setup
-│   │   └── simulation/     concurrency load-test script
+│   │   ├── app.ts           Express app factory
+│   │   ├── server.ts        HTTP server entrypoint
+│   │   ├── config/          env loading, db connection
+│   │   ├── models/          Mongoose schemas (Seat, Reservation)
+│   │   ├── services/        reservation.service.ts (shared booking logic),
+│   │   │                    expiration.service.ts, auth.service.ts
+│   │   ├── routes/          frontend, partner, and auth route handlers
+│   │   ├── middleware/      error handling, partner API-key auth, JWT auth
+│   │   ├── realtime/        Socket.IO + Redis adapter setup
+│   │   └── simulation/      concurrency load-test script
+│   ├── Dockerfile
 │   └── .env.example
-├── frontend/                Next.js + TypeScript UI
+├── frontend/                 Next.js + TypeScript UI
 │   ├── src/
-│   │   ├── app/            App Router pages
-│   │   ├── components/     SeatGrid, ReservationPanel
-│   │   ├── lib/            API client, socket client, userId persistence
-│   │   └── types/          DTOs mirroring the backend's response shapes
+│   │   ├── app/             App Router pages
+│   │   ├── components/      SeatGrid, ReservationPanel
+│   │   ├── lib/             API client, socket client, userId persistence
+│   │   └── types/           DTOs mirroring the backend's response shapes
+│   ├── Dockerfile
 │   └── .env.example
-├── .prettierrc.json         Shared formatting config (both apps inherit it)
+├── nginx/default.conf        Load balancer config (round-robins the two backend instances)
+├── docker-compose.yml         Full stack: Mongo (replica set) + Redis + 2× backend + nginx + frontend
+├── .prettierrc.json          Shared formatting config (both apps inherit it)
 └── README.md
 ```
 
@@ -108,6 +122,11 @@ architecture) reflect the current implementation, not the finished aspiration.
 ---
 
 ## Getting Started
+
+**Fastest path**: `docker compose up --build` runs the entire stack (Mongo, Redis, two backend
+instances, an nginx load balancer, and the frontend) in one command — see
+[Docker](#docker) for the full breakdown. The steps below are for running everything natively
+instead (useful for development, since `npm run dev` gives hot-reload that the containers don't).
 
 ### Prerequisites
 
@@ -167,13 +186,17 @@ npm run dev        # http://localhost:3000
 
 **`backend/.env`**
 
-| Variable          | Purpose                                               | Default (example)                                 |
-| ----------------- | ----------------------------------------------------- | ------------------------------------------------- |
-| `PORT`            | HTTP port for the Express server                      | `4000`                                            |
-| `MONGO_URI`       | MongoDB connection string (replica set)               | `mongodb://127.0.0.1:27017/cinema?replicaSet=rs0` |
-| `REDIS_URL`       | Redis connection string (Socket.IO adapter + pub/sub) | `redis://127.0.0.1:6379`                          |
-| `PARTNER_API_KEY` | Shared secret third-party callers must send           | `partner-secret-key`                              |
-| `CORS_ORIGIN`     | Allowed origin for the frontend                       | `http://localhost:3000`                           |
+| Variable                       | Purpose                                                                                                              | Default (example)                                 |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `PORT`                         | HTTP port for the Express server                                                                                     | `4000`                                            |
+| `MONGO_URI`                    | MongoDB connection string (replica set)                                                                              | `mongodb://127.0.0.1:27017/cinema?replicaSet=rs0` |
+| `REDIS_URL`                    | Redis connection string (Socket.IO adapter + pub/sub)                                                                | `redis://127.0.0.1:6379`                          |
+| `PARTNER_API_KEY`              | Shared secret third-party callers must send                                                                          | `partner-secret-key`                              |
+| `CORS_ORIGIN`                  | Allowed origin for the frontend                                                                                      | `http://localhost:3000`                           |
+| `JWT_SECRET`                   | Signs/verifies frontend auth tokens — **must be identical across every backend instance**, same as `PARTNER_API_KEY` | `dev-only-jwt-secret-change-me`                   |
+| `JWT_EXPIRES_IN`               | Token lifetime                                                                                                       | `24h`                                             |
+| `RESERVATION_TTL_MS`           | How long a confirmed reservation lives before the expiration sweep releases it                                       | `300000` (5 min)                                  |
+| `EXPIRATION_SWEEP_INTERVAL_MS` | How often the expiration sweep runs                                                                                  | `15000` (15 sec)                                  |
 
 **`frontend/.env`**
 
@@ -228,9 +251,28 @@ Returns every seat. `200`:
 
 Same shape as above, filtered to `status: "available"` only.
 
+### `POST /api/auth/login`
+
+Body: `{ "userId": string }`. No password — `userId` is still self-declared (see
+[Assumptions](#assumptions)); this just issues a signed token asserting that identity for
+subsequent requests. `200`:
+
+```json
+{ "token": "<jwt>", "userId": "alice" }
+```
+
+`400` `INVALID_INPUT` if `userId` is missing/blank.
+
 ### `POST /api/reservations` (frontend path)
 
-Body: `{ "userId": string, "seatIds": string[] }`
+Requires `Authorization: Bearer <token>` (from `/api/auth/login`) — missing or invalid → `401`
+`UNAUTHORIZED`. Body: `{ "userId": string, "seatIds": string[] }`; the authenticated token's
+`userId` always wins over the body's, so a request can't book on behalf of a different identity
+than the one it authenticated as.
+
+An optional `Idempotency-Key` header makes retries safe: replaying the exact same key returns the
+original reservation instead of attempting to book again (see
+[Retry safety](#retry-safety-idempotency-keys)).
 
 | Outcome                         | Status | Body                                                                                    |
 | ------------------------------- | ------ | --------------------------------------------------------------------------------------- |
@@ -238,13 +280,27 @@ Body: `{ "userId": string, "seatIds": string[] }`
 | One or more seats already taken | `409`  | `{ "error": { "code": "SEATS_UNAVAILABLE", "message", "conflictingSeats": string[] } }` |
 | Unknown seat id(s)              | `400`  | `{ "error": { "code": "INVALID_SEATS", "message", "invalidSeatIds": string[] } }`       |
 | Malformed body (empty/missing)  | `400`  | `{ "error": { "code": "INVALID_INPUT", "message", "details" } }`                        |
+| Missing/invalid token           | `401`  | `{ "error": { "code": "UNAUTHORIZED", "message" } }`                                    |
 
 A conflict never partially books — if any requested seat is unavailable, none of the seats in that
 request are reserved (see [Concurrency strategy](#concurrency-strategy)).
 
+### `DELETE /api/reservations/:reservationId`
+
+Requires the same `Authorization` header as booking. Cancels a reservation you made, releasing its
+seats back to `available`.
+
+| Outcome                                 | Status | Body                                                    |
+| --------------------------------------- | ------ | ------------------------------------------------------- |
+| Cancelled                               | `200`  | `{ "reservation": { ..., "status": "cancelled" } }`     |
+| Reservation belongs to a different user | `403`  | `{ "error": { "code": "FORBIDDEN", "message" } }`       |
+| No such reservation                     | `404`  | `{ "error": { "code": "NOT_FOUND", "message" } }`       |
+| Already cancelled or expired            | `409`  | `{ "error": { "code": "NOT_CANCELLABLE", "message" } }` |
+
 ### `POST /api/partner/v1/reservations` (third-party path)
 
-Identical contract and status codes to the route above, plus a required header:
+Identical contract and status codes to the frontend reservation route, plus a required header
+instead of a bearer token:
 
 ```
 x-api-key: <PARTNER_API_KEY>
@@ -254,6 +310,11 @@ Missing or wrong key → `401` `{ "error": { "code": "UNAUTHORIZED", "message" }
 route calls the exact same booking function as the frontend route — see
 [Shared booking logic](#shared-booking-logic-frontend--third-party-parity).
 
+### `DELETE /api/partner/v1/reservations/:reservationId`
+
+Same contract as the frontend cancellation route, gated by `x-api-key` instead of a bearer token,
+calling the same `cancelReservation()` function.
+
 ### `GET /health`
 
 Liveness check, `200` `{ "status": "ok" }` — not part of the seat/reservation API surface.
@@ -262,10 +323,10 @@ Liveness check, `200` `{ "status": "ok" }` — not part of the seat/reservation 
 
 Connect a Socket.IO client to the backend's base URL (no separate path/namespace).
 
-| Event            | Direction       | Payload                       | When                                                                                                                                                |
-| ---------------- | --------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `seats:snapshot` | server → client | `{ seats: SeatDTO[] }`        | Once, right after a client connects — full current seat state so a freshly opened tab doesn't have to wait for the next reservation.                |
-| `seats:updated`  | server → client | `{ seats: { id, status }[] }` | After every successful reservation, on **every** connected client, regardless of which backend instance served the request or which client made it. |
+| Event            | Direction       | Payload                       | When                                                                                                                                                                              |
+| ---------------- | --------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `seats:snapshot` | server → client | `{ seats: SeatDTO[] }`        | Once, right after a client connects — full current seat state so a freshly opened tab doesn't have to wait for the next reservation.                                              |
+| `seats:updated`  | server → client | `{ seats: { id, status }[] }` | After every successful reservation, cancellation, or expiration sweep — on **every** connected client, regardless of which backend instance handled it or which client caused it. |
 
 There is no client → server event in this system — sockets are read-only status feeds; all writes
 go through the REST endpoints above.
@@ -314,7 +375,12 @@ already-claimed seat.
 Both the frontend-facing route and the third-party partner route call **one function**:
 
 ```ts
-reserveSeats(userId: string, seatIds: string[], source: 'frontend' | 'partner'): Promise<ReservationResult>
+reserveSeats(
+  userId: string,
+  seatIds: string[],
+  source: 'frontend' | 'partner',
+  idempotencyKey?: string,
+): Promise<ReservationResult>
 ```
 
 This function is the single source of truth for booking rules and lives in
@@ -324,7 +390,12 @@ controllers happening to look similar, `backend/src/routes/reservationHandler.ts
 
 ```ts
 // reservations.routes.ts (frontend)
-router.post('/', validateBody(reserveSeatsRequestSchema), createReservationHandler('frontend'));
+router.post(
+  '/',
+  authenticate,
+  validateBody(reserveSeatsRequestSchema),
+  createReservationHandler('frontend'),
+);
 
 // partner.routes.ts (third-party)
 router.post(
@@ -335,13 +406,64 @@ router.post(
 );
 ```
 
-The only differences between the two routes are the URL, the partner-only API-key middleware, and
-the `source` tag passed through to `reserveSeats`. There is no second implementation of booking
-rules to drift out of sync — this is what guarantees a partner request and a frontend request
-racing for the same seat are resolved by the exact same code path and the exact same
-database-level guarantee. Verified live: 10 concurrent requests (5 via each route) targeting one
-seat produced exactly one `201` and nine `409`s, and a direct partner-vs-frontend conflict test
-(reserve via frontend, then try the same seat via partner) correctly returned `409`.
+The only differences between the two routes are the URL, which auth middleware sits in front
+(JWT for frontend, an API key for partner), and the `source` tag passed through to
+`reserveSeats`. There is no second implementation of booking rules to drift out of sync — this is
+what guarantees a partner request and a frontend request racing for the same seat are resolved by
+the exact same code path and the exact same database-level guarantee. Verified live: 10 concurrent
+requests (5 via each route) targeting one seat produced exactly one `201` and nine `409`s, and a
+direct partner-vs-frontend conflict test (reserve via frontend, then try the same seat via
+partner) correctly returned `409`. Cancellation mirrors this: `createCancellationHandler()` is
+the same kind of shared factory, mounted by both `DELETE` routes.
+
+### Reservation expiration
+
+Every reservation gets `expiresAt = createdAt + RESERVATION_TTL_MS` (default 5 minutes) when it's
+created — there's no separate "hold" state in this system (see
+[Trade-offs](#trade-offs)), so expiration is retrofitted onto the existing `confirmed` status
+instead. A background sweep (`services/expiration.service.ts`, `startExpirationSweep()`, run on
+an interval from `server.ts`) periodically finds reservations past their `expiresAt` that are
+still `confirmed`, and — one MongoDB transaction per reservation, re-checking `status: 'confirmed'`
+inside the transaction — releases their seats back to `available` and marks the reservation
+`expired`, then broadcasts `seats:updated` exactly like a normal booking. Re-checking status
+inside the transaction is what makes this safe to race against a concurrent cancellation or
+another sweep tick: whichever gets there first wins, the other finds the status has already
+changed and does nothing.
+
+### Reservation cancellation
+
+`cancelReservation(reservationId, userId)` is the cancellation counterpart to `reserveSeats` —
+same file, same transactional approach, same "no in-process locking" reasoning. It checks the
+reservation exists, checks the caller's `userId` matches the reservation's `userId` (`403` if
+not), checks it's still `confirmed` (`409` `NOT_CANCELLABLE` if already cancelled/expired), then
+releases the seats and marks it `cancelled` — all inside one transaction, followed by the same
+`seats:updated` broadcast every other write path uses.
+
+### Retry safety (idempotency keys)
+
+`reserveSeats` accepts an optional `idempotencyKey`. A request retried with the same key (e.g. a
+client that timed out waiting for a response, but whose first attempt actually landed
+server-side) returns the _original_ reservation instead of attempting to book again — this is
+checked once up front (fast path for the common sequential-retry case), and enforced for real by
+a unique sparse index on `Reservation.idempotencyKey`: if two requests sharing a key somehow reach
+`Reservation.create` concurrently, the loser's insert fails with a duplicate-key error, its
+transaction (including its own seat updates) rolls back automatically, and it re-reads the
+winner's reservation instead of erroring. What this guarantees is **never more than one
+reservation per key** — not that every concurrent racer with the same key succeeds identically,
+since concurrent requests can still legitimately lose the underlying seat race before the
+idempotency check ever comes into play (see the test suite's own commentary on this in
+`app.integration.test.ts`). The frontend sends a fresh key per submit via `crypto.randomUUID()`.
+
+### Authentication
+
+Deliberately minimal, per the brief's own "minimal JWT/session flow" framing: `POST /api/auth/login`
+takes a bare `userId` — no password — and returns a signed JWT. `userId` is still self-declared
+(see [Assumptions](#assumptions)); what changes is that once a client has a token, the server
+trusts the token's `userId` claim over whatever a request body claims, closing the gap where
+anyone could previously book a seat under any name. The `authenticate` middleware sits in front
+of the frontend reservation and cancellation routes only — the partner path keeps its API-key
+auth, which is a different, already-adequate trust boundary (a B2B integration authenticates as
+the partner, not as an individual end user, so per-request JWTs don't apply there).
 
 ### Correctness across multiple backend instances
 
@@ -379,20 +501,16 @@ initial `GET /api/seats` fetch for fast first paint, and the socket's `seats:sna
 wins and the other reconciles on top of it. Selection (`Set<string>` of seat IDs) is separate
 local UI state; the socket handler proactively removes a seat from the current selection the
 moment it's reported `reserved` by anyone (not just the current user), so a user can never submit
-a request for a seat the UI already knows is gone. On submit, the HTTP response is the source of
-truth for that request's own success/failure message; the grid's visual state updates from the
-`seats:updated` broadcast like it would for any other client — the submitting tab doesn't special-
-case itself.
+a request for a seat the UI already knows is gone.
 
----
-
-## Third-Party Booking API
-
-A separate route namespace (planned: `/api/partner/v1/reservations`) will let external systems
-reserve seats under the same rules as the frontend, authenticated via a simple API key
-(`x-api-key` header checked against `PARTNER_API_KEY`). It calls the identical
-`reserveSeats(...)` service function described above — see that section for why this prevents
-double-booking across the two traffic sources.
+**Optimistic updates**: on submit, the selected seats are immediately marked `reserved` in local
+state (and cleared from selection) _before_ the request resolves, rather than waiting on the round
+trip. If the request succeeds, nothing further is needed — the state's already correct, and the
+`seats:updated` broadcast that arrives shortly after is a harmless no-op merge, same as it would
+be for any other client. If it fails, the seats that were optimistically marked are rolled back to
+`available` — except any the server actually reports in `conflictingSeats`, which really are taken
+by someone else and should stay marked `reserved`. Since booking is all-or-nothing, a failure
+never partially succeeds, so this rollback logic doesn't need to guess.
 
 ---
 
@@ -483,13 +601,75 @@ split across two independent backend processes, not just asserted in prose.
 
 ---
 
+## Bonus Features
+
+All optional items from the brief are implemented. Design and reasoning for most of them live
+inline above, next to the code they describe:
+
+- **Reservation expiration** — [Reservation expiration](#reservation-expiration)
+- **Reservation cancellation** — [Reservation cancellation](#reservation-cancellation),
+  `DELETE /api/reservations/:id` in the [API Reference](#api-reference)
+- **Retry mechanism** — [Retry safety (idempotency keys)](#retry-safety-idempotency-keys)
+- **Authentication** — [Authentication](#authentication)
+- **Optimistic UI updates** — [Frontend state management](#frontend-state-management)
+- **Docker setup** — this section
+
+### Docker
+
+`docker-compose.yml` runs the entire stack in one command: a single-node Mongo replica set
+(auto-initiated by a one-shot `mongo-init` container), Redis, **two separate backend instances**
+(not `--scale` — each gets its own stable host port, which is what actually lets you hit them
+individually to prove the multi-instance story) behind an **nginx load balancer** that round-robins
+between them and proxies WebSocket upgrades correctly, a one-shot `seed` container, and the
+frontend.
+
+```bash
+docker compose up --build
+```
+
+| Service    | Host port | What                                                                                                        |
+| ---------- | --------- | ----------------------------------------------------------------------------------------------------------- |
+| `frontend` | `3000`    | The UI — open this in a browser                                                                             |
+| `nginx`    | `8080`    | Load balancer in front of both backend instances (what the frontend and simulation script actually talk to) |
+| `backend1` | `4000`    | Direct access to instance 1 (bypasses the load balancer, for debugging)                                     |
+| `backend2` | `4001`    | Direct access to instance 2                                                                                 |
+| `mongo`    | `27017`   | Direct DB access if needed                                                                                  |
+| `redis`    | `6379`    | Direct Redis access if needed                                                                               |
+
+To run the concurrency simulation against the containerized load-balanced stack instead of a
+local instance:
+
+```bash
+SIMULATION_TARGETS=http://localhost:8080 npm run simulate   # from backend/, needs local Node + this repo's deps
+```
+
+**Honesty note**: the sandbox this was built in has Docker installed but no permission to reach
+the daemon (`docker ps` → permission denied, and no passwordless `sudo` to fix it), so
+`docker compose up` itself could not be executed here. What _was_ validated without a daemon:
+`docker compose config` (confirms the YAML parses and every reference — env anchors, volumes,
+`depends_on` conditions — resolves correctly), `dockerfilelint` against both Dockerfiles (no
+issues), and — most importantly — every command each Dockerfile actually runs
+(`npm run build`, `node dist/server.js` for the backend; `next build` with `output: 'standalone'`
+and `node server.js` for the frontend) was run and verified directly on the host first. This is a
+real limitation to flag rather than paper over: the compose file is carefully constructed and
+individually-validated, but has not been proven end-to-end by actually starting the containers.
+
+---
+
 ## Assumptions
 
 - Single movie, single showing, exactly 50 fixed seats — no scheduling/multi-show complexity.
-- `userId` is self-declared (no mandatory authentication) since auth isn't a hard requirement.
+- `userId` is self-declared — there's no password or identity verification anywhere in this
+  system. The bonus JWT layer (see [Authentication](#authentication)) makes that identity
+  _tamper-evident_ once issued (a request can't silently claim to be a different already-logged-in
+  user), but it does not make `userId` a verified real-world identity; anyone can still declare
+  any `userId` and log in as it.
 - No payment flow — a "reservation" is the end state, not a booking-then-payment pipeline.
-- No seat "holding" during checkout by default — a seat is either `available` or `reserved`;
-  reservation expiration (bonus) is the natural extension if implemented.
+- A reservation is either `confirmed`, `expired`, or `cancelled` — there's no separate "hold"
+  state during checkout; the expiration bonus is retrofitted onto `confirmed` reservations instead
+  (see [Reservation expiration](#reservation-expiration)).
+
+---
 
 ## Trade-offs
 
@@ -506,6 +686,19 @@ split across two independent backend processes, not just asserted in prose.
   disconnects Mongoose before exiting. This wasn't in the original plan — it fell out of needing
   the real-time integration test to shut down cleanly instead of leaking Redis connections and
   hanging the test runner, and it happens to also make production shutdowns graceful for free.
+- **The default 5-minute reservation TTL applies to every booking**, not just an intermediate
+  "hold" — a seat reserved through this UI really will release itself 5 minutes later unless
+  cancelled or otherwise acted on. That's a deliberate reading of the brief's own bonus wording
+  ("automatically release seats after 5 minutes"), not an accident; `RESERVATION_TTL_MS` is
+  there to turn it down or up. Worth knowing if you're manually testing and a seat you booked
+  disappears out from under you a few minutes later — that's expiration working, not a bug.
+- **Idempotency keys guarantee at most one reservation per key**, not that every concurrent
+  request sharing a key succeeds — see [Retry safety](#retry-safety-idempotency-keys) for why
+  that's the correct guarantee to make rather than a limitation of the implementation.
+- **`JWT_SECRET` and `PARTNER_API_KEY` must be identical across every backend instance** for
+  tokens/keys issued or accepted by one instance to work against another — same requirement as
+  `MONGO_URI`/`REDIS_URL` already have, just for the auth layer. The Docker Compose stack sets
+  this via a shared YAML anchor so every service gets the same value automatically.
 
 ---
 

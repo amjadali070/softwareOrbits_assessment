@@ -42,11 +42,45 @@ export async function fetchAvailableSeats(): Promise<Seat[]> {
   return data.seats;
 }
 
-export async function reserveSeats(userId: string, seatIds: string[]): Promise<Reservation> {
-  const res = await fetch(`${API_URL}/api/reservations`, {
+// No password by design (see README assumptions) — userId is still self-declared, this just
+// gets it a signed token so the server can trust it on subsequent requests instead of taking
+// the request body's word for it.
+export async function login(userId: string): Promise<string> {
+  const res = await fetch(`${API_URL}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId }),
+  });
+  const data = await parseJsonOrThrow<{ token: string }>(res);
+  return data.token;
+}
+
+export async function reserveSeats(
+  token: string,
+  userId: string,
+  seatIds: string[],
+  idempotencyKey: string,
+): Promise<Reservation> {
+  const res = await fetch(`${API_URL}/api/reservations`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      'Idempotency-Key': idempotencyKey,
+    },
     body: JSON.stringify({ userId, seatIds }),
+  });
+  const data = await parseJsonOrThrow<{ reservation: Reservation }>(res);
+  return data.reservation;
+}
+
+export async function cancelReservation(
+  token: string,
+  reservationId: string,
+): Promise<Reservation> {
+  const res = await fetch(`${API_URL}/api/reservations/${encodeURIComponent(reservationId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
   });
   const data = await parseJsonOrThrow<{ reservation: Reservation }>(res);
   return data.reservation;

@@ -2,6 +2,7 @@ import { connectDB, disconnectDB } from '../config/db';
 import { Seat } from '../models/Seat';
 import { Reservation } from '../models/Reservation';
 import { env } from '../config/env';
+import { signToken } from '../services/auth.service';
 
 type Source = 'frontend' | 'partner';
 
@@ -67,7 +68,14 @@ async function fireRequest(
   const path = source === 'frontend' ? '/api/reservations' : '/api/partner/v1/reservations';
   const userId = `sim-user-${index}`;
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (source === 'partner') headers['x-api-key'] = env.partnerApiKey;
+  if (source === 'partner') {
+    headers['x-api-key'] = env.partnerApiKey;
+  } else {
+    // The frontend path requires auth (see middleware/authenticate.ts) — sign a token directly
+    // rather than making a real /api/auth/login round trip per simulated user, since this
+    // process already shares the same JWT_SECRET as the server(s) under test.
+    headers['Authorization'] = `Bearer ${signToken(userId)}`;
+  }
 
   try {
     const res = await fetch(`${target}${path}`, {
@@ -79,7 +87,15 @@ async function fireRequest(
     if (res.ok) {
       return { index, source, target, seatIds, status: res.status, ok: true };
     }
-    return { index, source, target, seatIds, status: res.status, ok: false, errorCode: body.error?.code };
+    return {
+      index,
+      source,
+      target,
+      seatIds,
+      status: res.status,
+      ok: false,
+      errorCode: body.error?.code,
+    };
   } catch (err) {
     return {
       index,
@@ -165,7 +181,9 @@ async function main() {
     `Whole table (${allSeats.length} seats): available=${totalAvailable}, reserved=${totalReserved}, sum=${totalAvailable + totalReserved}`,
   );
   console.log(`Reservations touching pool: ${poolReservations.length}`);
-  console.log(`Seats referenced by more than one reservation (double-booked): ${doubleBooked.length}`);
+  console.log(
+    `Seats referenced by more than one reservation (double-booked): ${doubleBooked.length}`,
+  );
   if (doubleBooked.length > 0) {
     console.error('DOUBLE-BOOKING DETECTED:', doubleBooked);
   }

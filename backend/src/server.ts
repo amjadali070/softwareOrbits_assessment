@@ -3,6 +3,7 @@ import { createApp } from './app';
 import { env } from './config/env';
 import { connectDB, disconnectDB } from './config/db';
 import { setupRealtime } from './realtime/socket';
+import { startExpirationSweep } from './services/expiration.service';
 
 async function main() {
   await connectDB();
@@ -10,6 +11,7 @@ async function main() {
   const app = createApp();
   const httpServer = createServer(app);
   const realtime = await setupRealtime(httpServer);
+  const stopExpirationSweep = startExpirationSweep(env.expirationSweepIntervalMs);
 
   httpServer.listen(env.port, () => {
     console.log(`Backend listening on http://localhost:${env.port}`);
@@ -17,6 +19,7 @@ async function main() {
 
   const shutdown = async () => {
     console.log('Shutting down...');
+    stopExpirationSweep();
     await realtime.close();
     await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     await disconnectDB();

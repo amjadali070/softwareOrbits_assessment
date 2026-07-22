@@ -7,6 +7,7 @@ import { createApp } from '../app';
 import { setupRealtime, type Realtime } from './socket';
 import { Seat } from '../models/Seat';
 import { Reservation } from '../models/Reservation';
+import { signToken } from '../services/auth.service';
 
 // Regression guard for the real-time layer itself: proves a client actually receives
 // seats:snapshot on connect and seats:updated after a real reservation goes through the full
@@ -73,7 +74,10 @@ describe('real-time layer', () => {
 
     const res = await fetch(`${baseUrl}/api/reservations`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${signToken('rt-user')}`,
+      },
       body: JSON.stringify({ userId: 'rt-user', seatIds: [SEAT_ID] }),
     });
     expect(res.status).toBe(201);

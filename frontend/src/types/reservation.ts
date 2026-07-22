@@ -9,12 +9,14 @@ export type Seat = {
 
 export type ReservationSource = 'frontend' | 'partner';
 
+export type ReservationStatus = 'confirmed' | 'cancelled' | 'expired';
+
 export type Reservation = {
   reservationId: string;
   userId: string;
   seats: string[];
   source: ReservationSource;
-  status: 'confirmed';
+  status: ReservationStatus;
   createdAt: string;
 };
 
@@ -24,6 +26,8 @@ export type ApiErrorCode =
   | 'INVALID_INPUT'
   | 'UNAUTHORIZED'
   | 'NOT_FOUND'
+  | 'FORBIDDEN'
+  | 'NOT_CANCELLABLE'
   | 'INTERNAL_ERROR';
 
 export type ApiErrorBody = {

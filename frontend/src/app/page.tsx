@@ -4,10 +4,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import { SeatGrid } from '@/components/SeatGrid';
 import { ReservationPanel } from '@/components/ReservationPanel';
-import { ApiError, fetchSeats, reserveSeats } from '@/lib/api';
+import { ApiError, cancelReservation, fetchSeats, login, reserveSeats } from '@/lib/api';
 import { createSocket } from '@/lib/socket';
 import { getOrCreateUserId, persistUserId } from '@/lib/userId';
 import type { Seat, SeatsSnapshotPayload, SeatsUpdatedPayload } from '@/types/reservation';
+
+type LastReservation = {
+  reservationId: string;
+  seats: string[];
+};
 
 export default function Home() {
   const [seats, setSeats] = useState<Seat[]>([]);
@@ -16,10 +21,14 @@ export default function Home() {
 
   const [selectedSeatIds, setSelectedSeatIds] = useState<Set<string>>(new Set());
   const [userId, setUserIdState] = useState('');
+  const [token, setToken] = useState<string | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
+
+  const [lastReservation, setLastReservation] = useState<LastReservation | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   const socketRef = useRef<Socket | null>(null);
 
@@ -29,6 +38,17 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setUserIdState(getOrCreateUserId());
   }, []);
+
+  // Debounced so a token isn't re-requested on every keystroke while editing the userId field.
+  useEffect(() => {
+    if (!userId.trim()) return;
+    const handle = setTimeout(() => {
+      login(userId)
+        .then((t) => setToken(t))
+        .catch(() => setToken(null));
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [userId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,20 +117,42 @@ export default function Home() {
   }, []);
 
   const handleSubmit = useCallback(async () => {
-    if (selectedSeatIds.size === 0 || !userId.trim()) return;
+    if (selectedSeatIds.size === 0 || !userId.trim() || !token) return;
+
+    const optimisticSeatIds = [...selectedSeatIds];
     setIsSubmitting(true);
     setSubmitError(null);
     setSubmitSuccess(null);
+
+    // Optimistic UI: reflect the booking immediately rather than waiting on the round trip;
+    // reconciled below if the request turns out to fail.
+    setSeats((current) =>
+      current.map((s) =>
+        optimisticSeatIds.includes(s.id) ? { ...s, status: 'reserved' as const } : s,
+      ),
+    );
+    setSelectedSeatIds(new Set());
+
+    const idempotencyKey = crypto.randomUUID();
+
     try {
-      const reservation = await reserveSeats(userId, [...selectedSeatIds]);
+      const reservation = await reserveSeats(token, userId, optimisticSeatIds, idempotencyKey);
       setSubmitSuccess(`Reserved ${reservation.seats.join(', ')}.`);
-      setSelectedSeatIds(new Set());
+      setLastReservation({ reservationId: reservation.reservationId, seats: reservation.seats });
     } catch (err) {
+      const conflicting = err instanceof ApiError ? (err.conflictingSeats ?? []) : [];
+      // Booking is all-or-nothing: on any failure, none of the requested seats got booked by
+      // us — except whichever ones the server reports as genuinely taken by someone else.
+      setSeats((current) =>
+        current.map((s) =>
+          optimisticSeatIds.includes(s.id) && !conflicting.includes(s.id)
+            ? { ...s, status: 'available' as const }
+            : s,
+        ),
+      );
       if (err instanceof ApiError) {
-        if (err.conflictingSeats?.length) {
-          setSubmitError(
-            `Seats ${err.conflictingSeats.join(', ')} were just taken — please reselect.`,
-          );
+        if (conflicting.length > 0) {
+          setSubmitError(`Seats ${conflicting.join(', ')} were just taken — please reselect.`);
         } else if (err.invalidSeatIds?.length) {
           setSubmitError(`Unknown seat(s): ${err.invalidSeatIds.join(', ')}.`);
         } else {
@@ -122,7 +164,23 @@ export default function Home() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [selectedSeatIds, userId]);
+  }, [selectedSeatIds, userId, token]);
+
+  const handleCancelLastReservation = useCallback(async () => {
+    if (!lastReservation || !token) return;
+    setIsCancelling(true);
+    setSubmitError(null);
+    try {
+      await cancelReservation(token, lastReservation.reservationId);
+      setSubmitSuccess('Reservation cancelled — seats are available again.');
+      setLastReservation(null);
+      // Seat grid reflects the release via the seats:updated broadcast, same as any other client.
+    } catch (err) {
+      setSubmitError(err instanceof ApiError ? err.message : 'Failed to cancel reservation.');
+    } finally {
+      setIsCancelling(false);
+    }
+  }, [lastReservation, token]);
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
@@ -150,8 +208,12 @@ export default function Home() {
             selectedSeatIds={[...selectedSeatIds]}
             onSubmit={handleSubmit}
             isSubmitting={isSubmitting}
+            isAuthenticating={!token}
             errorMessage={submitError}
             successMessage={submitSuccess}
+            lastReservationId={lastReservation?.reservationId ?? null}
+            onCancelLastReservation={handleCancelLastReservation}
+            isCancelling={isCancelling}
           />
         </>
       )}
