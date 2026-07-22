@@ -5,6 +5,7 @@ import seatsRouter from './routes/seats.routes';
 import reservationsRouter from './routes/reservations.routes';
 import partnerRouter from './routes/partner.routes';
 import authRouter from './routes/auth.routes';
+import simulationRouter from './routes/simulation.routes';
 import { errorHandler } from './middleware/errorHandler';
 
 export function createApp() {
@@ -21,6 +22,7 @@ export function createApp() {
   app.use('/api/seats', seatsRouter);
   app.use('/api/reservations', reservationsRouter);
   app.use('/api/partner', partnerRouter);
+  app.use('/api/simulation', simulationRouter);
 
   app.use((_req, res) => {
     res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Route not found.' } });

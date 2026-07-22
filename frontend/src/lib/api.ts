@@ -42,9 +42,6 @@ export async function fetchAvailableSeats(): Promise<Seat[]> {
   return data.seats;
 }
 
-// No password by design (see README assumptions) — userId is still self-declared, this just
-// gets it a signed token so the server can trust it on subsequent requests instead of taking
-// the request body's word for it.
 export async function login(userId: string): Promise<string> {
   const res = await fetch(`${API_URL}/api/auth/login`, {
     method: 'POST',
@@ -84,4 +81,26 @@ export async function cancelReservation(
   });
   const data = await parseJsonOrThrow<{ reservation: Reservation }>(res);
   return data.reservation;
+}
+
+export type SimulationResultDto = {
+  ok: boolean;
+  totalAttempts: number;
+  successful: number;
+  successfulFrontend: number;
+  successfulPartner: number;
+  conflicts: number;
+  errors: number;
+  elapsedMs: number;
+  doubleBookedCount: number;
+};
+
+export async function runSimulationApi(userCount = 100): Promise<SimulationResultDto> {
+  const res = await fetch(`${API_URL}/api/simulation/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userCount }),
+  });
+  const data = await parseJsonOrThrow<{ simulation: SimulationResultDto }>(res);
+  return data.simulation;
 }

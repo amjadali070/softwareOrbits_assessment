@@ -2,9 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
+import { Zap, RefreshCw, X } from 'lucide-react';
 import { SeatGrid } from '@/components/SeatGrid';
 import { ReservationPanel } from '@/components/ReservationPanel';
-import { ApiError, cancelReservation, fetchSeats, login, reserveSeats } from '@/lib/api';
+import {
+  ApiError,
+  cancelReservation,
+  fetchSeats,
+  login,
+  reserveSeats,
+  runSimulationApi,
+  type SimulationResultDto,
+} from '@/lib/api';
 import { createSocket } from '@/lib/socket';
 import { getOrCreateUserId, persistUserId } from '@/lib/userId';
 import type { Seat, SeatsSnapshotPayload, SeatsUpdatedPayload } from '@/types/reservation';
@@ -31,6 +40,9 @@ export default function Home() {
   const [isCancelling, setIsCancelling] = useState(false);
 
   const [isConnected, setIsConnected] = useState(false);
+
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [simulationSummary, setSimulationSummary] = useState<SimulationResultDto | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
 
@@ -188,9 +200,24 @@ export default function Home() {
     }
   }, [lastReservation, token]);
 
+  const handleRunSimulation = useCallback(async () => {
+    setIsSimulating(true);
+    setSimulationSummary(null);
+    setSubmitError(null);
+    setSubmitSuccess(null);
+    try {
+      const result = await runSimulationApi(100);
+      setSimulationSummary(result);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Simulation failed.');
+    } finally {
+      setIsSimulating(false);
+    }
+  }, []);
+
   return (
     <div className="min-h-screen bg-[#060810] text-slate-100 flex flex-col selection:bg-indigo-500 selection:text-white">
-      {/* Header Navbar - Aligned perfectly with main grid container */}
+      {/* Header Navbar */}
       <header className="border-b border-slate-800/80 bg-[#060810]/90 backdrop-blur-xl py-4 shadow-xl">
         <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
           <div>
@@ -202,17 +229,63 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2 rounded-full bg-slate-900/90 border border-slate-800 px-3 py-1.5 text-xs font-medium">
-            <span className={`h-2.5 w-2.5 rounded-full ${isConnected ? 'bg-emerald-500 beacon-pulse-active' : 'bg-rose-500 animate-pulse'}`} />
-            <span className="text-slate-300">
-              {isConnected ? 'Socket Live' : 'Reconnecting...'}
-            </span>
+          <div className="flex items-center gap-3">
+            {/* Simulation Trigger Button */}
+            <button
+              type="button"
+              disabled={isSimulating}
+              onClick={handleRunSimulation}
+              className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-md transition-all hover:shadow-purple-500/30 hover:scale-105 active:scale-95 disabled:opacity-50"
+              title="Trigger 100-user concurrent reservation simulation across frontend and partner routes"
+            >
+              {isSimulating ? (
+                <>
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                  <span>Simulating 100 Users...</span>
+                </>
+              ) : (
+                <>
+                  <Zap className="h-3.5 w-3.5 text-amber-300" />
+                  <span>Simulate 100 Users</span>
+                </>
+              )}
+            </button>
+
+            {/* Socket Indicator */}
+            <div className="flex items-center gap-2 rounded-full bg-slate-900/90 border border-slate-800 px-3 py-1.5 text-xs font-medium">
+              <span className={`h-2.5 w-2.5 rounded-full ${isConnected ? 'bg-emerald-500 beacon-pulse-active' : 'bg-rose-500 animate-pulse'}`} />
+              <span className="text-slate-300">
+                {isConnected ? 'Socket Live' : 'Reconnecting...'}
+              </span>
+            </div>
           </div>
         </div>
       </header>
 
-      {/* Main Container - Identical horizontal padding and max width as Header */}
+      {/* Main Container */}
       <main className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 flex-1 flex flex-col gap-6">
+        {/* Simulation Summary Banner */}
+        {simulationSummary && (
+          <div className="flex items-center justify-between gap-3 rounded-2xl bg-indigo-950/60 border border-indigo-500/30 px-4 py-3 text-xs text-indigo-200 shadow-lg">
+            <div className="flex items-center gap-2">
+              <Zap className="h-4 w-4 text-amber-300 shrink-0" />
+              <span>
+                <strong>Simulation Complete:</strong> Fired {simulationSummary.totalAttempts} concurrent requests in {simulationSummary.elapsedMs}ms —{' '}
+                <span className="text-emerald-400 font-bold">{simulationSummary.successful} Successful</span> ({simulationSummary.successfulFrontend} frontend, {simulationSummary.successfulPartner} partner),{' '}
+                <span className="text-amber-300 font-semibold">{simulationSummary.conflicts} Conflicts (409)</span>,{' '}
+                <span className="text-emerald-400 font-bold">{simulationSummary.doubleBookedCount} Double-Bookings</span>.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSimulationSummary(null)}
+              className="text-slate-400 hover:text-white transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
         {isLoadingSeats && (
           <p className="text-sm text-slate-400 py-16 text-center">Loading seat availability…</p>
         )}
@@ -228,7 +301,7 @@ export default function Home() {
                 seats={seats}
                 selectedSeatIds={selectedSeatIds}
                 onToggleSeat={toggleSeat}
-                disabled={isSubmitting}
+                disabled={isSubmitting || isSimulating}
               />
             </div>
             <div className="lg:col-span-4 flex flex-col">
