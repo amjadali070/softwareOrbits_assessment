@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
-import { Zap, RefreshCw, X } from 'lucide-react';
+import { Play, RefreshCw, X } from 'lucide-react';
 import { SeatGrid } from '@/components/SeatGrid';
 import { ReservationPanel } from '@/components/ReservationPanel';
 import {
@@ -230,22 +230,22 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Simulation Trigger Button */}
+            {/* Simulation Trigger Button - White Background & Play Icon */}
             <button
               type="button"
               disabled={isSimulating}
               onClick={handleRunSimulation}
-              className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-md transition-all hover:shadow-purple-500/30 hover:scale-105 active:scale-95 disabled:opacity-50"
-              title="Trigger 100-user concurrent reservation simulation across frontend and partner routes"
+              className="flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1.5 text-xs font-bold text-slate-950 shadow-md transition-all hover:bg-slate-100 hover:scale-105 active:scale-95 disabled:opacity-50"
+              title="Trigger 100-user concurrent reservation simulation"
             >
               {isSimulating ? (
                 <>
-                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-indigo-600" />
                   <span>Simulating 100 Users...</span>
                 </>
               ) : (
                 <>
-                  <Zap className="h-3.5 w-3.5 text-amber-300" />
+                  <Play className="h-3.5 w-3.5 fill-indigo-600 text-indigo-600" />
                   <span>Simulate 100 Users</span>
                 </>
               )}
@@ -264,16 +264,16 @@ export default function Home() {
 
       {/* Main Container */}
       <main className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 flex-1 flex flex-col gap-6">
-        {/* Simulation Summary Banner */}
+        {/* Simulation Summary Banner (No em dashes) */}
         {simulationSummary && (
           <div className="flex items-center justify-between gap-3 rounded-2xl bg-indigo-950/60 border border-indigo-500/30 px-4 py-3 text-xs text-indigo-200 shadow-lg">
             <div className="flex items-center gap-2">
-              <Zap className="h-4 w-4 text-amber-300 shrink-0" />
+              <Play className="h-4 w-4 fill-amber-300 text-amber-300 shrink-0" />
               <span>
-                <strong>Simulation Complete:</strong> Fired {simulationSummary.totalAttempts} concurrent requests in {simulationSummary.elapsedMs}ms —{' '}
-                <span className="text-emerald-400 font-bold">{simulationSummary.successful} Successful</span> ({simulationSummary.successfulFrontend} frontend, {simulationSummary.successfulPartner} partner),{' '}
-                <span className="text-amber-300 font-semibold">{simulationSummary.conflicts} Conflicts (409)</span>,{' '}
-                <span className="text-emerald-400 font-bold">{simulationSummary.doubleBookedCount} Double-Bookings</span>.
+                <strong>Simulation Complete:</strong> Fired {simulationSummary.totalAttempts} concurrent requests in {simulationSummary.elapsedMs}ms |{' '}
+                <span className="text-emerald-400 font-bold">{simulationSummary.successful} Successful</span> ({simulationSummary.successfulFrontend} frontend, {simulationSummary.successfulPartner} partner) |{' '}
+                <span className="text-amber-300 font-semibold">{simulationSummary.conflicts} Conflicts (409)</span> |{' '}
+                <span className="text-emerald-400 font-bold">{simulationSummary.doubleBookedCount} Double-Bookings</span>
               </span>
             </div>
             <button

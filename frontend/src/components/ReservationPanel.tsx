@@ -65,12 +65,12 @@ export function ReservationPanel({
           </div>
         </div>
 
-        {/* Submit Button */}
+        {/* Submit Button - White Background */}
         <button
           type="button"
           onClick={onSubmit}
           disabled={isSubmitting || isAuthenticating || selectedSeatIds.length === 0 || !userId.trim()}
-          className="w-full rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 px-4 py-3.5 text-sm font-bold text-white shadow-xl transition-all hover:shadow-indigo-500/25 hover:scale-[1.01] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100"
+          className="w-full rounded-2xl bg-white px-4 py-3.5 text-sm font-extrabold text-slate-950 shadow-xl transition-all hover:bg-slate-100 hover:scale-[1.01] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 disabled:hover:bg-white"
         >
           {isSubmitting
             ? 'Reserving…'

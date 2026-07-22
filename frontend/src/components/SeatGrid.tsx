@@ -92,11 +92,11 @@ export function SeatGrid({
           </div>
         </div>
 
-        {/* Guidance UX Message */}
+        {/* Guidance UX Message (No em dashes) */}
         <p className="text-xs text-slate-400 text-center font-medium">
           {stats.selected > 0 ? (
             <span className="text-amber-300 font-semibold">
-              {stats.selected} seat{stats.selected > 1 ? 's' : ''} selected — ready to reserve
+              {stats.selected} seat{stats.selected > 1 ? 's' : ''} selected: ready to reserve
             </span>
           ) : (
             <span>Click any available green seat to select for reservation</span>
