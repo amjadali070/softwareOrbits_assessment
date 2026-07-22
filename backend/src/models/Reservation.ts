@@ -27,4 +27,4 @@ reservationSchema.index({ status: 1, expiresAt: 1 });
 
 export type ReservationDocument = InferSchemaType<typeof reservationSchema>;
 
-export const Reservation = model('Reservation', reservationSchema);
+export const Reservation = model<ReservationDocument>('Reservation', reservationSchema);

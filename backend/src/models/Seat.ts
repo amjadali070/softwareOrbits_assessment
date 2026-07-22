@@ -24,4 +24,4 @@ seatSchema.index({ status: 1 });
 
 export type SeatDocument = InferSchemaType<typeof seatSchema>;
 
-export const Seat = model('Seat', seatSchema);
+export const Seat = model<SeatDocument>('Seat', seatSchema);

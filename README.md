@@ -19,7 +19,11 @@ This repo is being built in phases. Current state:
 - [x] **Phase 1 — Database & Models**: `Seat` and `Reservation` Mongoose schemas, a seed script
       that populates 50 seats (rows A–E × 10), and a verified replica-set transaction (raced two
       separate Node processes for the same seat — exactly one committed, the other failed clean).
-- [ ] **Phase 2** — Shared booking service (`reserveSeats`) with transactional concurrency control
+- [x] **Phase 2 — Booking Service**: `reserveSeats()` in `services/reservation.service.ts` — the
+      single function every reservation path calls. Per-seat conditional updates run inside a
+      MongoDB transaction for all-or-nothing multi-seat booking; unknown seat IDs, availability
+      conflicts, and bad input each return a distinct typed result. Covered by a Vitest suite
+      including a 20-concurrent-request race against 3 seats (`npm test` in `backend/`).
 - [ ] **Phase 3** — Backend REST APIs (frontend-facing + third-party partner)
 - [ ] **Phase 4** — Real-time layer (Socket.IO + Redis adapter, multi-instance fan-out)
 - [ ] **Phase 5** — Frontend seat map UI
@@ -195,8 +199,8 @@ A seat can only move from `available` → `reserved` via a single **atomic condi
 ```ts
 Seat.findOneAndUpdate(
   { _id: seatId, status: 'available' },
-  { $set: { status: 'reserved', reservationId, version: currentVersion + 1 } },
-  { new: true },
+  { $set: { status: 'reserved', reservationId }, $inc: { version: 1 } },
+  { returnDocument: 'after', session },
 );
 ```
 
@@ -207,22 +211,31 @@ MongoDB's single-document atomicity.
 For a **multi-seat** reservation, all seats must succeed or none should be booked. This is done by
 running the same conditional update for every requested seat **inside a MongoDB transaction**
 (which requires a replica set): if any seat in the group is already taken, the whole transaction
-aborts and nothing commits.
+aborts and nothing commits. Unknown seat IDs are rejected the same way (checked against the seat
+collection before any update is attempted) and reported as a distinct error from "seat already
+taken," so callers can tell a bad request apart from a real conflict.
+
+This is verified directly, not just asserted: `backend/src/services/reservation.service.test.ts`
+fires 20 concurrent `reserveSeats()` calls racing the same 3 seats and asserts exactly one winner
+per seat, no seat left in an inconsistent state, and no reservation record referencing an
+already-claimed seat.
 
 ### Shared booking logic (frontend + third-party parity)
 
-Both the frontend-facing route and the third-party partner route call **one function**:
+Both the frontend-facing route and the third-party partner route will call **one function**
+(routes land in Phase 3; the function itself already exists and is fully tested independent of
+any HTTP layer):
 
 ```ts
 reserveSeats(userId: string, seatIds: string[], source: 'frontend' | 'partner'): Promise<ReservationResult>
 ```
 
 This function is the single source of truth for booking rules and lives in
-`backend/src/services/reservation.service.ts`. The two Express routes are thin controllers that
-validate input, call this function, and translate the result into an HTTP response. Neither route
-implements its own booking logic — this is what guarantees a partner request and a frontend
-request racing for the same seat are resolved by the exact same code path and the exact same
-database-level guarantee.
+`backend/src/services/reservation.service.ts`. The two Express routes will be thin controllers
+that validate input, call this function, and translate the result into an HTTP response. Neither
+route will implement its own booking logic — this is what guarantees a partner request and a
+frontend request racing for the same seat are resolved by the exact same code path and the exact
+same database-level guarantee.
 
 ### Correctness across multiple backend instances
 
