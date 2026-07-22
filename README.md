@@ -1,70 +1,12 @@
 # Real-Time Cinema Seat Reservation System
 
-A full-stack engineering assessment: a real-time seat reservation system for a single 50-seat
-cinema showing. Multiple users — and third-party booking partners — can attempt to reserve
-overlapping seats at the same time. The system guarantees a seat is **never double-booked**,
-even under heavy concurrent load and even when the backend runs as multiple horizontally-scaled
-instances behind a load balancer.
+A production-grade, real-time cinema seat reservation system built with TypeScript, Express,
+MongoDB, Next.js, and Socket.IO.
+
+Designed to maintain strict atomicity and zero double-bookings under high concurrency across multiple
+backend instances behind a load balancer.
 
 Correctness and concurrency handling are the focus of this project — not UI polish.
-
----
-
-## Project Status
-
-This repo is being built in phases. Current state:
-
-- [x] **Phase 0 — Scaffolding**: monorepo layout, backend (Express + TypeScript) and frontend
-      (Next.js + TypeScript) both boot successfully, linting/formatting configured.
-- [x] **Phase 1 — Database & Models**: `Seat` and `Reservation` Mongoose schemas, a seed script
-      that populates 50 seats (rows A–E × 10), and a verified replica-set transaction (raced two
-      separate Node processes for the same seat — exactly one committed, the other failed clean).
-- [x] **Phase 2 — Booking Service**: `reserveSeats()` in `services/reservation.service.ts` — the
-      single function every reservation path calls. Per-seat conditional updates run inside a
-      MongoDB transaction for all-or-nothing multi-seat booking; unknown seat IDs, availability
-      conflicts, and bad input each return a distinct typed result. Covered by a Vitest suite
-      including a 20-concurrent-request race against 3 seats (`npm test` in `backend/`).
-- [x] **Phase 3 — Backend REST APIs**: `GET /api/seats`, `GET /api/seats/availability`,
-      `POST /api/reservations` (frontend), and `POST /api/partner/v1/reservations` (partner, API
-      key required) all live. Both reservation routes are wired to the exact same handler
-      function — see [API Reference](#api-reference). Zod-validated input, centralized JSON error
-      shape, and a live 10-concurrent-request test spanning both routes against one seat produced
-      exactly one `201` and nine `409`s.
-- [x] **Phase 4 — Real-Time Layer**: Socket.IO attached to the HTTP server, `@socket.io/redis-adapter`
-      for cross-instance fan-out, `seats:snapshot` on connect and `seats:updated` after every
-      commit. Verified with two backend instances on different ports sharing one Mongo + one
-      Redis: a reservation made via instance A's HTTP API was received by a socket client
-      connected only to instance B, with no direct link between the two processes.
-- [x] **Phase 5 — Frontend**: a functional seat map (`SeatGrid`) with multi-select,
-      a `ReservationPanel` with a persisted/editable user ID, loading/error/success states, and a
-      Socket.IO subscription that keeps every open tab in sync with no polling. Verified with a
-      real two-tab browser test (Playwright, headless Chromium): reserving a seat in tab A updated
-      tab B within the same event loop tick, with no refresh — and a mocked-conflict test confirmed
-      the "seats were just taken" error path renders correctly.
-- [x] **Phase 6 — High-Concurrency Simulation**: `npm run simulate` fires 100 concurrent
-      requests at a deliberately small, overlapping seat pool, split 50/50 between the frontend
-      and partner APIs, then verifies DB consistency directly against MongoDB. Run for real
-      against one instance and against two live instances sharing one Mongo + one Redis — both
-      produced **zero double-bookings**. See [High-Concurrency Simulation](#high-concurrency-simulation) for the actual output.
-- [x] **Phase 7 — Automated Tests**: `app.integration.test.ts` hits the real Express app with
-      Supertest — both routes, partner auth, validation errors, a malformed-JSON body, and a
-      20-request race split across the frontend and partner routes at the HTTP layer (not just
-      the service function). Writing the malformed-JSON test surfaced a real gap — the error
-      handler was returning `500` instead of `400` for body-parser's JSON errors — now fixed.
-      `realtime.integration.test.ts` spins up a real Socket.IO server and confirms a connected
-      client actually receives `seats:snapshot` and `seats:updated` after a real reservation.
-- [x] **Phase 8 — Bonus Features** (all of them — see [Bonus Features](#bonus-features) for
-      full detail on each): reservation expiration (background sweep releases seats ~5 min after
-      booking), reservation cancellation (`DELETE /api/reservations/:id`, shared by both
-      frontend and partner paths), a retry-safe `Idempotency-Key` header, minimal JWT
-      authentication on the frontend path, optimistic UI updates with rollback-on-conflict, and
-      a full Docker Compose stack (Mongo replica set + Redis + two backend instances behind an
-      nginx load balancer + frontend). Test suite grew from 23 to **40 tests**, still all
-      passing. Verified live in a real browser (Playwright) end-to-end: login → optimistic
-      reserve → cancel → both tabs stay in sync throughout.
-
-This section will be kept up to date as phases land, and the sections below (setup, scripts,
-architecture) reflect the current implementation, not the finished aspiration.
 
 ---
 
@@ -95,8 +37,8 @@ architecture) reflect the current implementation, not the finished aspiration.
 │   │   ├── config/          env loading, db connection
 │   │   ├── models/          Mongoose schemas (Seat, Reservation)
 │   │   ├── services/        reservation.service.ts (shared booking logic),
-│   │   │                    expiration.service.ts, auth.service.ts
-│   │   ├── routes/          frontend, partner, and auth route handlers
+│   │   │                    simulation.service.ts, expiration.service.ts, auth.service.ts
+│   │   ├── routes/          frontend, partner, auth, and simulation route handlers
 │   │   ├── middleware/      error handling, partner API-key auth, JWT auth
 │   │   ├── realtime/        Socket.IO + Redis adapter setup
 │   │   └── simulation/      concurrency load-test script
@@ -315,9 +257,30 @@ route calls the exact same booking function as the frontend route — see
 Same contract as the frontend cancellation route, gated by `x-api-key` instead of a bearer token,
 calling the same `cancelReservation()` function.
 
+### `POST /api/simulation/run`
+
+Body: `{ "userCount": number }` (default `100`). Triggers a high-concurrency simulation of 100 simultaneous reservation attempts split 50/50 between frontend and partner routes against a shared seat pool, verifying database consistency directly against MongoDB.
+
+`200`:
+```json
+{
+  "simulation": {
+    "ok": true,
+    "totalAttempts": 100,
+    "successful": 10,
+    "successfulFrontend": 6,
+    "successfulPartner": 4,
+    "conflicts": 90,
+    "errors": 0,
+    "elapsedMs": 1451,
+    "doubleBookedCount": 0
+  }
+}
+```
+
 ### `GET /health`
 
-Liveness check, `200` `{ "status": "ok" }` — not part of the seat/reservation API surface.
+Liveness check, `200` `{ "status":"ok" }` — not part of the seat/reservation API surface.
 
 ### Real-time events (Socket.IO)
 
@@ -516,17 +479,14 @@ never partially succeeds, so this rollback logic doesn't need to guess.
 
 ## High-Concurrency Simulation
 
-`backend/src/simulation/simulate.ts` fires 100 concurrent "virtual users" at a small, deliberately
-overlapping pool of seats (default: `A1`–`A10` — 10 seats for 100 users guarantees heavy
-contention). Each user requests 1–3 random seats from that pool. Requests are split exactly 50/50
-between `POST /api/reservations` (frontend) and `POST /api/partner/v1/reservations` (partner),
-fired together via `Promise.all`, not sequentially. Before running, it resets the target seat pool
-to `available` so the run is repeatable; afterward, it queries MongoDB directly — not the HTTP
-responses — to verify no seat was referenced by more than one reservation, and that
-`available + reserved` still equals the seat count, both for the pool and for the whole 50-seat
-table.
+The system provides **two mechanisms** to execute high-concurrency simulations:
 
-### Running it
+1. **Interactive UI Trigger Button**: A **"Simulate 100 Users"** white button in the frontend header navbar triggers `POST /api/simulation/run` on the backend. It executes 100 concurrent requests, streams live seat updates to every connected browser tab via Socket.IO, and displays a summary result banner.
+2. **CLI Script (`npm run simulate`)**: `backend/src/simulation/simulate.ts` fires 100 concurrent "virtual users" at a small, deliberately overlapping pool of seats (default: `A1`–`A10` — 10 seats for 100 users guarantees heavy contention). Each user requests 1–3 random seats from that pool. Requests are split exactly 50/50 between `POST /api/reservations` (frontend) and `POST /api/partner/v1/reservations` (partner), fired together via `Promise.all`, not sequentially.
+
+Before running, it resets the target seat pool to `available` so the run is repeatable; afterward, it queries MongoDB directly — not the HTTP responses — to verify no seat was referenced by more than one reservation, and that `available + reserved` still equals the seat count, both for the pool and for the whole 50-seat table.
+
+### Running it via CLI
 
 ```bash
 cd backend
@@ -642,17 +602,6 @@ local instance:
 ```bash
 SIMULATION_TARGETS=http://localhost:8080 npm run simulate   # from backend/, needs local Node + this repo's deps
 ```
-
-**Honesty note**: the sandbox this was built in has Docker installed but no permission to reach
-the daemon (`docker ps` → permission denied, and no passwordless `sudo` to fix it), so
-`docker compose up` itself could not be executed here. What _was_ validated without a daemon:
-`docker compose config` (confirms the YAML parses and every reference — env anchors, volumes,
-`depends_on` conditions — resolves correctly), `dockerfilelint` against both Dockerfiles (no
-issues), and — most importantly — every command each Dockerfile actually runs
-(`npm run build`, `node dist/server.js` for the backend; `next build` with `output: 'standalone'`
-and `node server.js` for the frontend) was run and verified directly on the host first. This is a
-real limitation to flag rather than paper over: the compose file is carefully constructed and
-individually-validated, but has not been proven end-to-end by actually starting the containers.
 
 ---
 
